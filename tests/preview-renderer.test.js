@@ -71,3 +71,25 @@ test("tone curve master channel lifts mids when curve points are raised", () => 
 
   assert.ok(curved[0] > neutral[0], "expected boosted RGB curve mid-point to brighten midtone pixel");
 });
+
+test("camera profile amount shifts rendering style", () => {
+  const vivid = structuredClone(DEFAULT_ADJUSTMENTS);
+  vivid.cameraProfile = "adobeVivid";
+  vivid.profileAmount = 100;
+  const neutral = structuredClone(DEFAULT_ADJUSTMENTS);
+  neutral.cameraProfile = "adobeNeutral";
+  neutral.profileAmount = 100;
+
+  const vividPixel = singlePixel([180, 120, 90, 255], vivid);
+  const neutralPixel = singlePixel([180, 120, 90, 255], neutral);
+  assert.notDeepEqual(vividPixel.slice(0, 3), neutralPixel.slice(0, 3));
+});
+
+test("black and white treatment desaturates channels", () => {
+  const bw = structuredClone(DEFAULT_ADJUSTMENTS);
+  bw.treatment = "blackAndWhite";
+
+  const processed = singlePixel([180, 60, 40, 255], bw);
+  assert.ok(Math.abs(processed[0] - processed[1]) < 3);
+  assert.ok(Math.abs(processed[1] - processed[2]) < 3);
+});

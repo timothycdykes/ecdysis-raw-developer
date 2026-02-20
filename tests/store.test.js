@@ -86,3 +86,24 @@ test("copy selective can include color mixer and grading groups", () => {
   assert.equal(store.selectedImages[0].adjustments.colorGrade.global.saturation, 55);
   assert.equal(store.selectedImages[0].adjustments.exposure, 0);
 });
+
+test("profile selective copy transfers profile settings", () => {
+  const store = new RawDeveloperStore([
+    { id: "1", fileName: "a.CR3" },
+    { id: "2", fileName: "b.CR3" }
+  ]);
+
+  store.selectImages(["1"]);
+  store.applyAdjustment("cameraProfile", "adobeLandscape");
+  store.applyAdjustment("profileAmount", 150);
+  store.applyAdjustment("treatment", "blackAndWhite");
+  store.copyAdjustments({ includeGroups: ["profile"] });
+
+  store.selectImages(["2"]);
+  store.pasteAdjustments();
+
+  assert.equal(store.selectedImages[0].adjustments.cameraProfile, "adobeLandscape");
+  assert.equal(store.selectedImages[0].adjustments.profileAmount, 150);
+  assert.equal(store.selectedImages[0].adjustments.treatment, "blackAndWhite");
+  assert.equal(store.selectedImages[0].adjustments.exposure, 0);
+});

@@ -88,6 +88,31 @@ function circularHueDistance(a, b) {
 
 const MIXER_CHANNELS = Object.keys(MIXER_CHANNEL_CENTERS);
 const MIXER_SIGMA_SQUARED = 2 * 36 * 36;
+const PROFILE_TUNING = {
+  adobeColor: { saturation: 0.08, contrast: 0.04, hueShift: 0, luminance: 0 },
+  adobeLandscape: { saturation: 0.18, contrast: 0.08, hueShift: -2, luminance: -0.02 },
+  adobePortrait: { saturation: 0.04, contrast: 0.02, hueShift: 3, luminance: 0.02 },
+  adobeNeutral: { saturation: -0.08, contrast: -0.04, hueShift: 0, luminance: 0.03 },
+  adobeVivid: { saturation: 0.24, contrast: 0.12, hueShift: -3, luminance: -0.01 },
+  adobeMonochrome: { saturation: -1, contrast: 0.02, hueShift: 0, luminance: 0 }
+};
+
+function applyProfile(hsl, adjustments) {
+  const profile = adjustments.cameraProfile ?? "adobeColor";
+  const profileAmount = clampUnit((adjustments.profileAmount ?? 100) / 100);
+  const treatment = adjustments.treatment ?? "color";
+  const tuning = PROFILE_TUNING[profile] ?? PROFILE_TUNING.adobeColor;
+
+  if (treatment === "blackAndWhite" || profile === "adobeMonochrome") {
+    hsl[1] = clampUnit(hsl[1] * (1 - profileAmount));
+  } else {
+    hsl[0] = (hsl[0] + (tuning.hueShift * profileAmount) + 360) % 360;
+    hsl[1] = clampUnit(hsl[1] * (1 + tuning.saturation * profileAmount));
+  }
+
+  const centerDistance = hsl[2] - 0.5;
+  hsl[2] = clampUnit(hsl[2] + centerDistance * tuning.contrast * profileAmount + tuning.luminance * profileAmount);
+}
 
 function buildMixerLookupTable(mixer = {}) {
   const hueLut = new Float32Array(360);
@@ -235,6 +260,7 @@ export function processPreviewPixels(data, width, height, adjustments) {
       hsl[0] = (hsl[0] + hueShift + 360) % 360;
       hsl[1] = clampUnit(hsl[1] * (1 + saturationShift * 0.9));
       hsl[2] = clampUnit(hsl[2] + luminanceShift * 0.24 * chromaProtection);
+      applyProfile(hsl, adjustments);
 
       const grade = adjustments.colorGrade;
       if (grade) {

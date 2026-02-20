@@ -1,4 +1,7 @@
 export const DEFAULT_ADJUSTMENTS = Object.freeze({
+  cameraProfile: "adobeColor",
+  profileAmount: 100,
+  treatment: "color",
   whiteBalanceTemp: 5500,
   whiteBalanceTint: 0,
   exposure: 0,
@@ -40,9 +43,10 @@ export const DEFAULT_ADJUSTMENTS = Object.freeze({
 });
 
 export const COPY_GROUPS = {
+  profile: ["cameraProfile", "profileAmount", "treatment"],
   whiteBalance: ["whiteBalanceTemp", "whiteBalanceTint"],
   light: ["exposure", "contrast", "highlights", "shadows", "whites", "blacks"],
-  color: ["saturation", "vibrance"],
+  color: ["saturation", "vibrance", "cameraProfile", "profileAmount", "treatment"],
   effects: ["clarity", "texture", "dehaze", "vignette"],
   curves: ["toneCurve"],
   mixer: ["colorMixer"],
