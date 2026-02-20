@@ -26,6 +26,17 @@ const sourceImageCache = new Map();
 const sourcePixelsCache = new Map();
 let previewRenderToken = 0;
 let scheduledPreviewFrame = null;
+const zoomState = { scale: 1, mode: "fit" };
+
+const COLOR_OPTIONS = ["none", "red", "yellow", "green", "blue", "purple"];
+const COLOR_SWATCH = {
+  none: "#697285",
+  red: "#f16f6f",
+  yellow: "#f9d56f",
+  green: "#6ecb8f",
+  blue: "#6ea8ff",
+  purple: "#b891ff"
+};
 
 const filmstripEl = document.querySelector("#filmstrip");
 const basicControlsEl = document.querySelector("#basic-controls");
@@ -36,6 +47,7 @@ const previewEmptyEl = document.querySelector("#preview-empty");
 const previewMetaEl = document.querySelector("#preview-meta");
 const dropTargetEl = document.querySelector("#drop-target");
 const previewCardEl = document.querySelector("#preview-card");
+const zoomLevelEl = document.querySelector("#zoom-level");
 const previewCtx = previewCanvasEl.getContext("2d", { willReadFrequently: true });
 
 function selectedBase() {
@@ -96,14 +108,8 @@ function readImage(url) {
 }
 
 function formatControlValue(control, value) {
-  if (control.key === "whiteBalanceTemp") {
-    return `${Math.round(value)} K`;
-  }
-
-  if (control.key === "exposure") {
-    return `${Number(value).toFixed(1)} EV`;
-  }
-
+  if (control.key === "whiteBalanceTemp") return `${Math.round(value)} K`;
+  if (control.key === "exposure") return `${Number(value).toFixed(1)} EV`;
   return String(value);
 }
 
@@ -111,15 +117,26 @@ function clampControlValue(control, value) {
   const min = Number(control.min);
   const max = Number(control.max);
   const step = Number(control.step);
-
   let nextValue = Number(value);
-  if (!Number.isFinite(nextValue)) {
-    nextValue = Number(DEFAULT_ADJUSTMENTS[control.key]);
-  }
-
+  if (!Number.isFinite(nextValue)) nextValue = Number(DEFAULT_ADJUSTMENTS[control.key]);
   nextValue = Math.min(max, Math.max(min, nextValue));
   const stepped = Math.round(nextValue / step) * step;
   return Number(stepped.toFixed(step < 1 ? 1 : 0));
+}
+
+function computePreviewDimensions(sourceImage, scale = 1) {
+  const cardWidth = previewCardEl.clientWidth - 24;
+  const cardHeight = previewCardEl.clientHeight - 24;
+  const fitScale = Math.min(cardWidth / sourceImage.naturalWidth, cardHeight / sourceImage.naturalHeight, 1);
+  const qualityScale = Math.max(fitScale * Math.max(scale, 1), 0.2);
+  const targetScale = Math.min(qualityScale * (window.devicePixelRatio || 1), 1);
+  const targetWidth = Math.max(64, Math.round(sourceImage.naturalWidth * targetScale));
+  const targetHeight = Math.max(64, Math.round(sourceImage.naturalHeight * targetScale));
+  return {
+    targetWidth: Math.min(targetWidth, 2200),
+    targetHeight: Math.min(targetHeight, 2200),
+    fitScale
+  };
 }
 
 async function isPreviewUrlRenderable(url) {
@@ -136,20 +153,29 @@ async function getRawPreviewUrlFromFile(file) {
   try {
     const fileBytes = new Uint8Array(await file.arrayBuffer());
     const candidates = extractEmbeddedJpegPreviews(fileBytes, { minBytes: 2_048 });
-
     for (const candidate of candidates) {
       const candidateUrl = URL.createObjectURL(new Blob([candidate], { type: "image/jpeg" }));
       const renderable = await isPreviewUrlRenderable(candidateUrl);
-      if (renderable) {
-        return candidateUrl;
-      }
+      if (renderable) return candidateUrl;
       URL.revokeObjectURL(candidateUrl);
     }
   } catch {
     return null;
   }
-
   return null;
+}
+
+function setImageRating(imageId, rating) {
+  store.selectImages([imageId]);
+  store.rateSelected(rating);
+  renderFilmstrip();
+}
+
+function setImageColorLabel(imageId, colorLabel) {
+  store.selectImages([imageId]);
+  if (colorLabel !== "none") store.setColorLabel(colorLabel);
+  else store.selectedImages.forEach((img) => { img.colorLabel = null; });
+  renderFilmstrip();
 }
 
 function renderFilmstrip() {
@@ -172,9 +198,44 @@ function renderFilmstrip() {
       ? `<img class="filmstrip-thumb" src="${image.previewUrl}" alt="${image.fileName}" />`
       : `<div class="filmstrip-thumb filmstrip-thumb--placeholder">RAW</div>`;
 
-    btn.innerHTML = `${thumb}<strong>${image.fileName}</strong>
-      <small>${image.rating ? "★".repeat(image.rating) : "Unrated"} ${image.colorLabel ? `• ${image.colorLabel}` : ""}</small>
-      ${image.markedForDeletion ? "<small>Marked for deletion</small>" : ""}`;
+    btn.innerHTML = `${thumb}<strong>${image.fileName}</strong><small>${image.markedForDeletion ? "Marked for deletion" : ""}</small>`;
+
+    const meta = document.createElement("div");
+    meta.className = "filmstrip-meta";
+
+    const stars = document.createElement("div");
+    stars.className = "filmstrip-stars";
+    for (let idx = 1; idx <= 5; idx += 1) {
+      const star = document.createElement("button");
+      star.type = "button";
+      star.className = `star-chip ${idx <= image.rating ? "active" : ""}`;
+      star.textContent = "★";
+      star.title = `${idx} star`;
+      star.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setImageRating(image.id, idx);
+      });
+      stars.append(star);
+    }
+
+    const dots = document.createElement("div");
+    dots.className = "color-dot-select";
+    COLOR_OPTIONS.forEach((color) => {
+      const dot = document.createElement("button");
+      dot.type = "button";
+      dot.className = `color-dot ${image.colorLabel === color || (!image.colorLabel && color === "none") ? "active" : ""}`;
+      dot.style.background = COLOR_SWATCH[color];
+      dot.title = color;
+      dot.addEventListener("click", (event) => {
+        event.stopPropagation();
+        setImageColorLabel(image.id, color);
+      });
+      dots.append(dot);
+    });
+
+    meta.append(stars, dots);
+    btn.append(meta);
+
     btn.onclick = (event) => {
       if (event.ctrlKey || event.metaKey) {
         const next = store.selectedIds.includes(image.id)
@@ -186,8 +247,16 @@ function renderFilmstrip() {
       }
       render();
     };
+
     filmstripEl.append(btn);
   });
+}
+
+function applyZoom(scale, mode = "manual") {
+  zoomState.scale = Math.min(6, Math.max(0.1, scale));
+  zoomState.mode = mode;
+  previewCanvasEl.style.transform = `scale(${zoomState.scale})`;
+  zoomLevelEl.textContent = `${Math.round(zoomState.scale * 100)}%`;
 }
 
 async function renderPreview() {
@@ -213,25 +282,26 @@ async function renderPreview() {
 
   try {
     const sourceImage = await readImage(image.previewUrl);
-    if (currentToken !== previewRenderToken) {
-      return;
-    }
+    if (currentToken !== previewRenderToken) return;
 
-    let sourcePixels = sourcePixelsCache.get(image.id);
+    const dims = computePreviewDimensions(sourceImage, zoomState.scale);
+    if (zoomState.mode === "fit") applyZoom(dims.fitScale, "fit");
+    const cacheKey = `${image.id}:${dims.targetWidth}x${dims.targetHeight}`;
+
+    let sourcePixels = sourcePixelsCache.get(cacheKey);
     if (!sourcePixels) {
-      previewCanvasEl.width = sourceImage.naturalWidth;
-      previewCanvasEl.height = sourceImage.naturalHeight;
-      previewCtx.drawImage(sourceImage, 0, 0);
-      sourcePixels = previewCtx.getImageData(0, 0, previewCanvasEl.width, previewCanvasEl.height);
-      sourcePixelsCache.set(image.id, sourcePixels);
+      previewCanvasEl.width = dims.targetWidth;
+      previewCanvasEl.height = dims.targetHeight;
+      previewCtx.drawImage(sourceImage, 0, 0, dims.targetWidth, dims.targetHeight);
+      sourcePixels = previewCtx.getImageData(0, 0, dims.targetWidth, dims.targetHeight);
+      sourcePixelsCache.set(cacheKey, sourcePixels);
     } else {
       previewCanvasEl.width = sourcePixels.width;
       previewCanvasEl.height = sourcePixels.height;
     }
 
-    const processed = processPreviewPixels(sourcePixels.data, previewCanvasEl.width, previewCanvasEl.height, image.adjustments);
-    const nextImage = new ImageData(processed, previewCanvasEl.width, previewCanvasEl.height);
-    previewCtx.putImageData(nextImage, 0, 0);
+    const processed = processPreviewPixels(sourcePixels.data, sourcePixels.width, sourcePixels.height, image.adjustments);
+    previewCtx.putImageData(new ImageData(processed, sourcePixels.width, sourcePixels.height), 0, 0);
 
     previewCanvasEl.hidden = false;
     previewEmptyEl.hidden = true;
@@ -243,14 +313,35 @@ async function renderPreview() {
 }
 
 function schedulePreviewRender() {
-  if (scheduledPreviewFrame) {
-    cancelAnimationFrame(scheduledPreviewFrame);
-  }
-
+  if (scheduledPreviewFrame) cancelAnimationFrame(scheduledPreviewFrame);
   scheduledPreviewFrame = requestAnimationFrame(() => {
     scheduledPreviewFrame = null;
     renderPreview();
   });
+}
+
+async function exportSelectedImage() {
+  const selected = store.selectedImages;
+  if (!selected.length) return;
+
+  for (const image of selected) {
+    if (!image.previewUrl) continue;
+    const source = await readImage(image.previewUrl);
+    const canvas = document.createElement("canvas");
+    canvas.width = source.naturalWidth;
+    canvas.height = source.naturalHeight;
+    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    ctx.drawImage(source, 0, 0);
+    const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    const processed = processPreviewPixels(pixels.data, canvas.width, canvas.height, image.adjustments);
+    ctx.putImageData(new ImageData(processed, canvas.width, canvas.height), 0, 0);
+
+    const dataUrl = canvas.toDataURL("image/jpeg", 0.95);
+    const a = document.createElement("a");
+    a.href = dataUrl;
+    a.download = image.fileName.replace(/\.[^/.]+$/, "") + "-edited.jpg";
+    a.click();
+  }
 }
 
 function renderBasicControls() {
@@ -260,9 +351,7 @@ function renderBasicControls() {
 
   const sections = new Map();
   CONTROL_DEFINITIONS.forEach((control) => {
-    if (!sections.has(control.section)) {
-      sections.set(control.section, []);
-    }
+    if (!sections.has(control.section)) sections.set(control.section, []);
     sections.get(control.section).push(control);
   });
 
@@ -277,18 +366,14 @@ function renderBasicControls() {
 
       const heading = document.createElement("div");
       heading.className = "control-heading";
-
       const label = document.createElement("span");
       label.textContent = control.label;
-
       const valueText = document.createElement("small");
       valueText.textContent = formatControlValue(control, image.adjustments[control.key]);
-
       heading.append(label, valueText);
 
       const sliderAndInput = document.createElement("div");
       sliderAndInput.className = "control-inputs";
-
       const input = document.createElement("input");
       input.type = "range";
       input.min = String(control.min);
@@ -313,17 +398,9 @@ function renderBasicControls() {
         schedulePreviewRender();
       };
 
-      input.addEventListener("input", () => {
-        applyControlUpdate(input.value);
-      });
-
-      valueInput.addEventListener("change", () => {
-        applyControlUpdate(valueInput.value);
-      });
-
-      input.addEventListener("dblclick", () => {
-        applyControlUpdate(DEFAULT_ADJUSTMENTS[control.key]);
-      });
+      input.addEventListener("input", () => applyControlUpdate(input.value));
+      valueInput.addEventListener("change", () => applyControlUpdate(valueInput.value));
+      input.addEventListener("dblclick", () => applyControlUpdate(DEFAULT_ADJUSTMENTS[control.key]));
 
       sliderAndInput.append(input, valueInput);
       wrapper.append(heading, sliderAndInput);
@@ -338,7 +415,6 @@ function renderMasks() {
   const image = selectedBase();
   maskListEl.innerHTML = "";
   if (!image) return;
-
   image.masks.forEach((mask) => {
     const li = document.createElement("li");
     li.textContent = `${mask.type} (${mask.id})`;
@@ -350,7 +426,6 @@ function renderSnapshots() {
   const image = selectedBase();
   snapshotListEl.innerHTML = "";
   if (!image) return;
-
   image.snapshots.forEach((snapshot) => {
     const li = document.createElement("li");
     const button = document.createElement("button");
@@ -397,15 +472,11 @@ function bindDragAndDrop() {
   });
 
   ["dragenter", "dragover"].forEach((eventName) => {
-    dropTargetEl.addEventListener(eventName, () => {
-      previewCardEl.classList.add("drag-over");
-    });
+    dropTargetEl.addEventListener(eventName, () => previewCardEl.classList.add("drag-over"));
   });
 
   ["dragleave", "drop"].forEach((eventName) => {
-    dropTargetEl.addEventListener(eventName, () => {
-      previewCardEl.classList.remove("drag-over");
-    });
+    dropTargetEl.addEventListener(eventName, () => previewCardEl.classList.remove("drag-over"));
   });
 
   dropTargetEl.addEventListener("drop", async (event) => {
@@ -413,28 +484,16 @@ function bindDragAndDrop() {
     const droppedFiles = Array.from(event.dataTransfer?.files ?? []);
 
     for (const file of droppedFiles) {
-      if (!supportsInlinePreview(file.name) && !isRawFile(file.name)) {
-        continue;
-      }
-
+      if (!supportsInlinePreview(file.name) && !isRawFile(file.name)) continue;
       const rawFormat = isRawFile(file.name);
       let previewUrl = null;
-
-      if (supportsInlinePreview(file.name)) {
-        previewUrl = URL.createObjectURL(file);
-      } else if (rawFormat) {
+      if (supportsInlinePreview(file.name)) previewUrl = URL.createObjectURL(file);
+      else if (rawFormat) {
         previewUrl = await getRawPreviewUrlFromFile(file);
-        if (!previewUrl) {
-          previewUrl = createSyntheticRawPreview(file.name);
-        }
+        if (!previewUrl) previewUrl = createSyntheticRawPreview(file.name);
       }
 
-      imported.push({
-        fileName: file.name,
-        fullPath: file.path,
-        previewUrl,
-        rawFormat
-      });
+      imported.push({ fileName: file.name, fullPath: file.path, previewUrl, rawFormat });
     }
 
     if (!imported.length) return;
@@ -460,10 +519,7 @@ function bindTabs() {
     });
   }
 
-  tabButtons.forEach((button) => {
-    button.addEventListener("click", () => activateTab(button.dataset.tab));
-  });
-
+  tabButtons.forEach((button) => button.addEventListener("click", () => activateTab(button.dataset.tab)));
   activateTab("edit");
 }
 
@@ -495,14 +551,14 @@ function bindActions() {
       .map((group) => group.trim());
     store.savePreset(name, includeGroups);
   };
+
   document.querySelector("#export-recipe").onclick = downloadRecipe;
+  document.querySelector("#export-image").onclick = exportSelectedImage;
 
   document.querySelector("#apply-meta").onclick = () => {
     store.rateSelected(Number(document.querySelector("#rating").value));
     const label = document.querySelector("#color-label").value.trim();
-    if (label) {
-      store.setColorLabel(label);
-    }
+    if (label) store.setColorLabel(label);
     renderFilmstrip();
   };
 
@@ -517,14 +573,30 @@ function bindActions() {
     renderMasks();
   };
 
+  document.querySelector("#zoom-in").onclick = () => applyZoom(zoomState.scale * 1.2);
+  document.querySelector("#zoom-out").onclick = () => applyZoom(zoomState.scale / 1.2);
+  document.querySelector("#zoom-fit").onclick = () => {
+    zoomState.mode = "fit";
+    schedulePreviewRender();
+  };
+
+  previewCardEl.addEventListener("wheel", (event) => {
+    if (event.deltaY === 0) return;
+    event.preventDefault();
+    const factor = event.deltaY < 0 ? 1.08 : 0.92;
+    applyZoom(zoomState.scale * factor);
+  }, { passive: false });
+
+  window.addEventListener("resize", () => {
+    sourcePixelsCache.clear();
+    schedulePreviewRender();
+  });
+
   document.addEventListener("keydown", (event) => {
     if (event.ctrlKey && event.key.toLowerCase() === "c") {
       event.preventDefault();
-      if (event.shiftKey) {
-        document.querySelector("#copy-selective").click();
-      } else {
-        store.copyAdjustments();
-      }
+      if (event.shiftKey) document.querySelector("#copy-selective").click();
+      else store.copyAdjustments();
     }
 
     if (event.ctrlKey && event.key.toLowerCase() === "v") {

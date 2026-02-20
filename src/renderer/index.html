@@ -15,6 +15,7 @@
         <button id="paste">Paste</button>
         <button id="snapshot">Snapshot</button>
         <button id="preset">Save Preset</button>
+        <button id="export-image">Export Image</button>
         <button id="export-recipe">Export Recipe</button>
       </div>
     </header>
@@ -23,8 +24,16 @@
       <aside class="filmstrip" id="filmstrip"></aside>
 
       <section class="preview-pane">
+        <div class="preview-toolbar">
+          <div class="zoom-controls">
+            <button id="zoom-out" title="Zoom out">−</button>
+            <button id="zoom-fit" title="Fit preview">Fit</button>
+            <button id="zoom-in" title="Zoom in">+</button>
+            <span id="zoom-level">100%</span>
+          </div>
+        </div>
         <div class="preview-card" id="preview-card">
-          <canvas id="preview-canvas" aria-label="Selected preview" hidden></canvas>
+          <canvas id="preview-canvas" aria-label="Selected preview" hidden draggable="false"></canvas>
           <div class="preview-empty" id="preview-empty">
             Drag RAW/JPEG files here to begin.
           </div>
