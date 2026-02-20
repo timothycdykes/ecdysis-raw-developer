@@ -34,6 +34,10 @@
 
       <section class="preview-pane">
         <div class="preview-toolbar">
+          <div class="tool-controls" role="group" aria-label="Preview tools">
+            <button id="hand-tool" title="Hand tool (H)">Hand</button>
+            <button id="crop-tool" title="Crop tool (C)">Crop</button>
+          </div>
           <div class="zoom-controls">
             <button id="zoom-out" title="Zoom out">−</button>
             <button id="zoom-fit" title="Fit preview">Fit</button>
@@ -41,6 +45,7 @@
             <span id="zoom-level">100%</span>
           </div>
         </div>
+        <p class="preview-help" id="preview-help">Pan: hold Space and drag (or press H for Hand tool).</p>
         <div class="preview-card" id="preview-card">
           <div id="preview-stage" class="preview-stage" hidden>
             <canvas id="preview-canvas" aria-label="Selected preview" draggable="false"></canvas>
