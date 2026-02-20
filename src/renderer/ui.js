@@ -26,7 +26,7 @@ const sourceImageCache = new Map();
 const sourcePixelsCache = new Map();
 let previewRenderToken = 0;
 let scheduledPreviewFrame = null;
-const zoomState = { scale: 1 };
+const zoomState = { scale: 1, pendingPan: null };
 const interactionState = {
   spacePressed: false,
   panning: false,
@@ -37,7 +37,8 @@ const interactionState = {
   cropMode: false,
   cropDragging: false,
   cropStartX: 0,
-  cropStartY: 0
+  cropStartY: 0,
+  handTool: false
 };
 
 const COLOR_OPTIONS = ["none", "red", "yellow", "green", "blue", "purple"];
@@ -85,6 +86,9 @@ const previewStageEl = document.querySelector("#preview-stage");
 const cropOverlayEl = document.querySelector("#crop-overlay");
 const cropBoxEl = document.querySelector("#crop-box");
 const zoomLevelEl = document.querySelector("#zoom-level");
+const handToolButtonEl = document.querySelector("#hand-tool");
+const cropToolButtonEl = document.querySelector("#crop-tool");
+const previewHelpEl = document.querySelector("#preview-help");
 const previewCtx = previewCanvasEl.getContext("2d", { willReadFrequently: true });
 
 function selectedBase() {
@@ -317,8 +321,53 @@ function renderFilmstrip() {
   });
 }
 
-function applyZoom(scale) {
-  zoomState.scale = Math.min(6, Math.max(0.1, scale));
+function setCropMode(enabled) {
+  interactionState.cropMode = enabled;
+  cropOverlayEl.hidden = !enabled;
+  if (enabled) interactionState.handTool = false;
+  updateToolUi();
+}
+
+function setHandTool(enabled) {
+  interactionState.handTool = enabled;
+  if (enabled) setCropMode(false);
+  updateToolUi();
+}
+
+function isPreviewPannable() {
+  return previewCardEl.scrollWidth > previewCardEl.clientWidth || previewCardEl.scrollHeight > previewCardEl.clientHeight;
+}
+
+function updateToolUi() {
+  handToolButtonEl.classList.toggle("active", interactionState.handTool);
+  cropToolButtonEl.classList.toggle("active", interactionState.cropMode);
+  previewCardEl.classList.toggle("mode-crop", interactionState.cropMode);
+
+  const panMode = (interactionState.spacePressed || interactionState.handTool) && isPreviewPannable();
+  previewCardEl.classList.toggle("mode-pan", panMode);
+  previewCardEl.classList.toggle("is-panning", interactionState.panning);
+
+  if (interactionState.cropMode) previewHelpEl.textContent = "Crop mode: drag on image to set crop. Press C to exit.";
+  else if (interactionState.handTool) previewHelpEl.textContent = "Hand tool active: drag to pan. Press H to switch back.";
+  else previewHelpEl.textContent = "Pan: hold Space and drag (or press H for Hand tool).";
+}
+
+function applyZoom(scale, anchor = null) {
+  const previousScale = zoomState.scale;
+  const nextScale = Math.min(6, Math.max(0.1, scale));
+  if (anchor && previousScale > 0) {
+    const rect = previewCardEl.getBoundingClientRect();
+    const offsetX = Math.max(0, Math.min(rect.width, anchor.clientX - rect.left));
+    const offsetY = Math.max(0, Math.min(rect.height, anchor.clientY - rect.top));
+    const contentX = previewCardEl.scrollLeft + offsetX;
+    const contentY = previewCardEl.scrollTop + offsetY;
+    const ratio = nextScale / previousScale;
+    zoomState.pendingPan = {
+      left: contentX * ratio - offsetX,
+      top: contentY * ratio - offsetY
+    };
+  }
+  zoomState.scale = nextScale;
   schedulePreviewRender();
 }
 
@@ -332,6 +381,7 @@ async function renderPreview() {
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Drag RAW/JPEG files here to begin.";
     previewMetaEl.textContent = "";
+    updateToolUi();
     return;
   }
 
@@ -342,6 +392,7 @@ async function renderPreview() {
     previewCardEl.classList.remove("is-zoomed");
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Preview unavailable for this file.";
+    updateToolUi();
     return;
   }
 
@@ -386,14 +437,24 @@ async function renderPreview() {
     const isZoomed = dims.displayWidth > previewCardEl.clientWidth || dims.displayHeight > previewCardEl.clientHeight;
     previewCardEl.classList.toggle("is-zoomed", isZoomed);
 
+    if (zoomState.pendingPan) {
+      const maxLeft = Math.max(0, previewCardEl.scrollWidth - previewCardEl.clientWidth);
+      const maxTop = Math.max(0, previewCardEl.scrollHeight - previewCardEl.clientHeight);
+      previewCardEl.scrollLeft = Math.max(0, Math.min(maxLeft, zoomState.pendingPan.left));
+      previewCardEl.scrollTop = Math.max(0, Math.min(maxTop, zoomState.pendingPan.top));
+      zoomState.pendingPan = null;
+    }
+
     previewStageEl.hidden = false;
     previewEmptyEl.hidden = true;
     cropOverlayEl.hidden = !interactionState.cropMode;
+    updateToolUi();
   } catch {
     previewStageEl.hidden = true;
     previewCardEl.classList.remove("is-zoomed");
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Unable to decode preview image.";
+    updateToolUi();
   }
 }
 
@@ -808,8 +869,7 @@ function commitCropFromBox() {
   const height = boxRect.height / canvasRect.height;
   setImageCrop(image, { x, y, width, height });
   sourcePixelsCache.clear();
-  interactionState.cropMode = false;
-  cropOverlayEl.hidden = true;
+  setCropMode(false);
   schedulePreviewRender();
 }
 
@@ -869,12 +929,22 @@ function bindActions() {
     renderMasks();
   };
 
-  document.querySelector("#zoom-in").onclick = () => applyZoom(zoomState.scale * 1.2);
-  document.querySelector("#zoom-out").onclick = () => applyZoom(zoomState.scale / 1.2);
+  document.querySelector("#zoom-in").onclick = () => {
+    const rect = previewCardEl.getBoundingClientRect();
+    applyZoom(zoomState.scale * 1.2, { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+  };
+  document.querySelector("#zoom-out").onclick = () => {
+    const rect = previewCardEl.getBoundingClientRect();
+    applyZoom(zoomState.scale / 1.2, { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+  };
   document.querySelector("#zoom-fit").onclick = () => {
+    zoomState.pendingPan = { left: 0, top: 0 };
     zoomState.scale = 1;
     schedulePreviewRender();
   };
+
+  handToolButtonEl.onclick = () => setHandTool(!interactionState.handTool);
+  cropToolButtonEl.onclick = () => setCropMode(!interactionState.cropMode);
 
   previewCardEl.addEventListener("wheel", (event) => {
     if (event.deltaY === 0) return;
@@ -882,8 +952,18 @@ function bindActions() {
     if (!isZoomGesture) return;
     event.preventDefault();
     const factor = event.deltaY < 0 ? 1.08 : 0.92;
-    applyZoom(zoomState.scale * factor);
+    applyZoom(zoomState.scale * factor, { clientX: event.clientX, clientY: event.clientY });
   }, { passive: false });
+
+  const startPan = (event) => {
+    event.preventDefault();
+    interactionState.panning = true;
+    interactionState.panStartX = event.clientX;
+    interactionState.panStartY = event.clientY;
+    interactionState.scrollLeft = previewCardEl.scrollLeft;
+    interactionState.scrollTop = previewCardEl.scrollTop;
+    updateToolUi();
+  };
 
   previewCardEl.addEventListener("mousedown", (event) => {
     if (interactionState.cropMode) {
@@ -899,15 +979,18 @@ function bindActions() {
       return;
     }
 
-    if (!interactionState.spacePressed || zoomState.scale <= 1 || event.button !== 0) return;
-    event.preventDefault();
-    interactionState.panning = true;
-    interactionState.panStartX = event.clientX;
-    interactionState.panStartY = event.clientY;
-    interactionState.scrollLeft = previewCardEl.scrollLeft;
-    interactionState.scrollTop = previewCardEl.scrollTop;
-    previewCardEl.style.cursor = "grabbing";
+    const panIntent = interactionState.spacePressed || interactionState.handTool || event.button === 1;
+    if (!panIntent || !isPreviewPannable() || (event.button !== 0 && event.button !== 1)) return;
+    startPan(event);
   });
+
+  previewCardEl.addEventListener("dblclick", (event) => {
+    if (!selectedBase()) return;
+    const targetScale = zoomState.scale <= 1.05 ? 2 : 1;
+    applyZoom(targetScale, { clientX: event.clientX, clientY: event.clientY });
+  });
+
+  previewCanvasEl.addEventListener("dragstart", (event) => event.preventDefault());
 
   window.addEventListener("mousemove", (event) => {
     if (interactionState.cropDragging) {
@@ -927,7 +1010,13 @@ function bindActions() {
       return;
     }
     interactionState.panning = false;
-    previewCardEl.style.cursor = interactionState.spacePressed ? "grab" : "default";
+    updateToolUi();
+  });
+
+  window.addEventListener("blur", () => {
+    interactionState.spacePressed = false;
+    interactionState.panning = false;
+    updateToolUi();
   });
 
   window.addEventListener("resize", () => {
@@ -938,13 +1027,17 @@ function bindActions() {
   document.addEventListener("keydown", (event) => {
     if (event.code === "Space" && !isTypingIntoField(event.target)) {
       interactionState.spacePressed = true;
-      previewCardEl.style.cursor = "grab";
+      updateToolUi();
       event.preventDefault();
     }
 
     if (event.key.toLowerCase() === "c" && !event.ctrlKey && !isTypingIntoField(event.target)) {
-      interactionState.cropMode = !interactionState.cropMode;
-      cropOverlayEl.hidden = !interactionState.cropMode;
+      setCropMode(!interactionState.cropMode);
+      event.preventDefault();
+    }
+
+    if (event.key.toLowerCase() === "h" && !event.ctrlKey && !isTypingIntoField(event.target)) {
+      setHandTool(!interactionState.handTool);
       event.preventDefault();
     }
 
@@ -985,7 +1078,7 @@ function bindActions() {
     if (event.code !== "Space") return;
     interactionState.spacePressed = false;
     interactionState.panning = false;
-    previewCardEl.style.cursor = "default";
+    updateToolUi();
   });
 }
 
