@@ -62,6 +62,12 @@ const COLOR_SHORTCUTS = {
 };
 const MIXER_CHANNELS = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"];
 const GRADE_RANGES = ["shadows", "midtones", "highlights", "global"];
+const TONE_CURVE_POINTS = [
+  { label: "Shadows", index: 1 },
+  { label: "Midtones", index: 2 },
+  { label: "Highlights", index: 3 }
+];
+const TONE_CURVE_CONTROL_SCALE = 0.5;
 const MIXER_PROPS = ["hue", "saturation", "luminance"];
 const MIXER_PROP_LABEL = { hue: "Hue", saturation: "Sat", luminance: "Lum" };
 const CHANNEL_SWATCH = {
@@ -690,6 +696,33 @@ function renderBasicControls() {
 
     basicControlsEl.append(section);
   });
+
+  const toneCurveSection = document.createElement("section");
+  toneCurveSection.className = "control-section";
+  toneCurveSection.innerHTML = "<h3>Tone Curve</h3>";
+
+  TONE_CURVE_POINTS.forEach(({ label, index }) => {
+    const identityValue = index / (DEFAULT_ADJUSTMENTS.toneCurve.rgb.length - 1);
+    const currentValue = image.adjustments.toneCurve.rgb[index];
+    const uiValue = Math.round(((currentValue - identityValue) / TONE_CURVE_CONTROL_SCALE) * 100);
+    const row = createNestedControlRow({
+      label,
+      value: uiValue,
+      min: -100,
+      max: 100,
+      step: 1,
+      defaultValue: 0,
+      onUpdate: (next) => {
+        beginInteractivePreviewUpdate();
+        const target = identityValue + ((next / 100) * TONE_CURVE_CONTROL_SCALE);
+        image.adjustments.toneCurve.rgb[index] = Math.max(0, Math.min(1, target));
+        schedulePreviewRender();
+      }
+    });
+    toneCurveSection.append(row);
+  });
+
+  basicControlsEl.append(toneCurveSection);
 }
 
 function renderColorControls() {

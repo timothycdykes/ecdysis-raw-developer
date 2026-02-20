@@ -60,3 +60,14 @@ test("color grading affects highlights and shadows", () => {
   assert.notDeepEqual(shadow.slice(0, 3), neutralShadow.slice(0, 3), "expected shadow grading to alter neutral shadow response");
   assert.ok(highlight[0] > neutralHighlight[0], "expected highlight grading with positive luminance to brighten highlights");
 });
+
+
+test("tone curve master channel lifts mids when curve points are raised", () => {
+  const adjusted = structuredClone(DEFAULT_ADJUSTMENTS);
+  adjusted.toneCurve.rgb = [0, 0.25, 0.7, 0.9, 1];
+
+  const curved = singlePixel([120, 120, 120, 255], adjusted);
+  const neutral = singlePixel([120, 120, 120, 255], DEFAULT_ADJUSTMENTS);
+
+  assert.ok(curved[0] > neutral[0], "expected boosted RGB curve mid-point to brighten midtone pixel");
+});
