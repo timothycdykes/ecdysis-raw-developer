@@ -1,5 +1,6 @@
 import { RawDeveloperStore } from "../core/store.js";
 import { isRawFile, supportsInlinePreview } from "../core/file-formats.js";
+import { extractEmbeddedJpegPreview } from "../core/raw-preview.js";
 
 const basicControlKeys = [
   "whiteBalanceTemp",
@@ -253,20 +254,36 @@ function bindDragAndDrop() {
     });
   });
 
-  dropTargetEl.addEventListener("drop", (event) => {
+  dropTargetEl.addEventListener("drop", async (event) => {
     const imported = [];
 
-    Array.from(event.dataTransfer?.files ?? []).forEach((file) => {
+    const droppedFiles = Array.from(event.dataTransfer?.files ?? []);
+
+    for (const file of droppedFiles) {
       if (!supportsInlinePreview(file.name) && !isRawFile(file.name)) {
-        return;
+        continue;
       }
 
       const rawFormat = isRawFile(file.name);
-      const previewUrl = supportsInlinePreview(file.name)
-        ? URL.createObjectURL(file)
-        : rawFormat
-          ? createSyntheticRawPreview(file.name)
-          : null;
+      let previewUrl = null;
+
+      if (supportsInlinePreview(file.name)) {
+        previewUrl = URL.createObjectURL(file);
+      } else if (rawFormat) {
+        try {
+          const fileBytes = new Uint8Array(await file.arrayBuffer());
+          const embeddedPreview = extractEmbeddedJpegPreview(fileBytes);
+          if (embeddedPreview) {
+            previewUrl = URL.createObjectURL(new Blob([embeddedPreview], { type: "image/jpeg" }));
+          }
+        } catch {
+          previewUrl = null;
+        }
+
+        if (!previewUrl) {
+          previewUrl = createSyntheticRawPreview(file.name);
+        }
+      }
 
       imported.push({
         fileName: file.name,
@@ -274,7 +291,7 @@ function bindDragAndDrop() {
         previewUrl,
         rawFormat
       });
-    });
+    }
 
     if (!imported.length) return;
     store.importFiles(imported);
