@@ -7,6 +7,7 @@ body {
   margin: 0;
   background: #1a1b1f;
   color: #ececec;
+  overflow: hidden;
 }
 
 .topbar {
@@ -41,8 +42,9 @@ input {
 
 .layout {
   display: grid;
-  grid-template-columns: 280px 1fr 400px;
+  grid-template-columns: minmax(220px, 18vw) minmax(0, 1fr) minmax(320px, 28vw);
   height: calc(100vh - 56px);
+  width: 100%;
 }
 
 .filmstrip {
@@ -137,6 +139,7 @@ input {
   display: flex;
   flex-direction: column;
   gap: 12px;
+  min-width: 0;
 }
 
 .preview-toolbar {
@@ -166,6 +169,7 @@ input {
   display: grid;
   place-items: center;
   overflow: auto;
+  position: relative;
 }
 
 .preview-card.drag-over {
@@ -174,8 +178,23 @@ input {
 }
 
 #preview-canvas {
-  transform-origin: center center;
-  object-fit: contain;
+  display: block;
+}
+
+.preview-stage {
+  position: relative;
+}
+
+.crop-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.crop-box {
+  position: absolute;
+  border: 2px solid #6ea8ff;
+  box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35);
 }
 
 .preview-empty {
@@ -199,6 +218,7 @@ input {
   flex-direction: column;
   gap: 12px;
   background: #1b1e26;
+  min-width: 0;
 }
 
 .acr-tabs {

@@ -7,7 +7,7 @@ import { processPreviewPixels } from "../core/preview-renderer.js";
 const CONTROL_DEFINITIONS = [
   { key: "whiteBalanceTemp", label: "Temperature", min: 2000, max: 50000, step: 100, section: "White Balance", unit: "K" },
   { key: "whiteBalanceTint", label: "Tint", min: -100, max: 100, step: 1, section: "White Balance" },
-  { key: "exposure", label: "Exposure", min: -5, max: 5, step: 0.1, section: "Light", unit: "EV" },
+  { key: "exposure", label: "Exposure", min: -5, max: 5, step: 0.05, section: "Light", unit: "EV" },
   { key: "contrast", label: "Contrast", min: -100, max: 100, step: 1, section: "Light" },
   { key: "highlights", label: "Highlights", min: -100, max: 100, step: 1, section: "Light" },
   { key: "shadows", label: "Shadows", min: -100, max: 100, step: 1, section: "Light" },
@@ -26,7 +26,19 @@ const sourceImageCache = new Map();
 const sourcePixelsCache = new Map();
 let previewRenderToken = 0;
 let scheduledPreviewFrame = null;
-const zoomState = { scale: 1, mode: "fit" };
+const zoomState = { scale: 1 };
+const interactionState = {
+  spacePressed: false,
+  panning: false,
+  panStartX: 0,
+  panStartY: 0,
+  scrollLeft: 0,
+  scrollTop: 0,
+  cropMode: false,
+  cropDragging: false,
+  cropStartX: 0,
+  cropStartY: 0
+};
 
 const COLOR_OPTIONS = ["none", "red", "yellow", "green", "blue", "purple"];
 const COLOR_SWATCH = {
@@ -36,6 +48,13 @@ const COLOR_SWATCH = {
   green: "#6ecb8f",
   blue: "#6ea8ff",
   purple: "#b891ff"
+};
+const COLOR_SHORTCUTS = {
+  "6": "red",
+  "7": "yellow",
+  "8": "green",
+  "9": "blue",
+  "0": "purple"
 };
 
 const filmstripEl = document.querySelector("#filmstrip");
@@ -47,11 +66,31 @@ const previewEmptyEl = document.querySelector("#preview-empty");
 const previewMetaEl = document.querySelector("#preview-meta");
 const dropTargetEl = document.querySelector("#drop-target");
 const previewCardEl = document.querySelector("#preview-card");
+const previewStageEl = document.querySelector("#preview-stage");
+const cropOverlayEl = document.querySelector("#crop-overlay");
+const cropBoxEl = document.querySelector("#crop-box");
 const zoomLevelEl = document.querySelector("#zoom-level");
 const previewCtx = previewCanvasEl.getContext("2d", { willReadFrequently: true });
 
 function selectedBase() {
   return store.selectedImages[0];
+}
+
+function getImageCrop(image) {
+  if (!image?.crop) {
+    return { x: 0, y: 0, width: 1, height: 1 };
+  }
+  return image.crop;
+}
+
+function setImageCrop(image, crop) {
+  if (!image) return;
+  image.crop = {
+    x: Math.max(0, Math.min(1, crop.x)),
+    y: Math.max(0, Math.min(1, crop.y)),
+    width: Math.max(0.05, Math.min(1, crop.width)),
+    height: Math.max(0.05, Math.min(1, crop.height))
+  };
 }
 
 function createSyntheticRawPreview(fileName) {
@@ -109,7 +148,7 @@ function readImage(url) {
 
 function formatControlValue(control, value) {
   if (control.key === "whiteBalanceTemp") return `${Math.round(value)} K`;
-  if (control.key === "exposure") return `${Number(value).toFixed(1)} EV`;
+  if (control.key === "exposure") return `${Number(value).toFixed(2)} EV`;
   return String(value);
 }
 
@@ -121,21 +160,29 @@ function clampControlValue(control, value) {
   if (!Number.isFinite(nextValue)) nextValue = Number(DEFAULT_ADJUSTMENTS[control.key]);
   nextValue = Math.min(max, Math.max(min, nextValue));
   const stepped = Math.round(nextValue / step) * step;
-  return Number(stepped.toFixed(step < 1 ? 1 : 0));
+  const decimals = step < 1 ? Math.ceil(Math.log10(1 / step)) : 0;
+  return Number(stepped.toFixed(decimals));
 }
 
-function computePreviewDimensions(sourceImage, scale = 1) {
+function computePreviewDimensions(sourceImage, scale = 1, crop = { x: 0, y: 0, width: 1, height: 1 }) {
   const cardWidth = previewCardEl.clientWidth - 24;
   const cardHeight = previewCardEl.clientHeight - 24;
-  const fitScale = Math.min(cardWidth / sourceImage.naturalWidth, cardHeight / sourceImage.naturalHeight, 1);
-  const qualityScale = Math.max(fitScale * Math.max(scale, 1), 0.2);
+  const cropWidth = Math.max(1, Math.round(sourceImage.naturalWidth * crop.width));
+  const cropHeight = Math.max(1, Math.round(sourceImage.naturalHeight * crop.height));
+  const fitScale = Math.min(cardWidth / cropWidth, cardHeight / cropHeight, 1);
+  const displayScale = fitScale * Math.max(scale, 1);
+  const qualityScale = Math.max(displayScale, 0.2);
   const targetScale = Math.min(qualityScale * (window.devicePixelRatio || 1), 1);
-  const targetWidth = Math.max(64, Math.round(sourceImage.naturalWidth * targetScale));
-  const targetHeight = Math.max(64, Math.round(sourceImage.naturalHeight * targetScale));
+  const targetWidth = Math.max(64, Math.round(cropWidth * targetScale));
+  const targetHeight = Math.max(64, Math.round(cropHeight * targetScale));
   return {
     targetWidth: Math.min(targetWidth, 2200),
     targetHeight: Math.min(targetHeight, 2200),
-    fitScale
+    fitScale,
+    sourceCropX: Math.round(sourceImage.naturalWidth * crop.x),
+    sourceCropY: Math.round(sourceImage.naturalHeight * crop.y),
+    sourceCropWidth: cropWidth,
+    sourceCropHeight: cropHeight
   };
 }
 
@@ -252,11 +299,10 @@ function renderFilmstrip() {
   });
 }
 
-function applyZoom(scale, mode = "manual") {
+function applyZoom(scale) {
   zoomState.scale = Math.min(6, Math.max(0.1, scale));
-  zoomState.mode = mode;
-  previewCanvasEl.style.transform = `scale(${zoomState.scale})`;
   zoomLevelEl.textContent = `${Math.round(zoomState.scale * 100)}%`;
+  schedulePreviewRender();
 }
 
 async function renderPreview() {
@@ -264,7 +310,7 @@ async function renderPreview() {
   const image = selectedBase();
 
   if (!image) {
-    previewCanvasEl.hidden = true;
+    previewStageEl.hidden = true;
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Drag RAW/JPEG files here to begin.";
     previewMetaEl.textContent = "";
@@ -274,7 +320,7 @@ async function renderPreview() {
   previewMetaEl.textContent = `${image.fileName} • ${image.fullPath ?? "dropped file"}`;
 
   if (!image.previewUrl) {
-    previewCanvasEl.hidden = true;
+    previewStageEl.hidden = true;
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Preview unavailable for this file.";
     return;
@@ -284,15 +330,25 @@ async function renderPreview() {
     const sourceImage = await readImage(image.previewUrl);
     if (currentToken !== previewRenderToken) return;
 
-    const dims = computePreviewDimensions(sourceImage, zoomState.scale);
-    if (zoomState.mode === "fit") applyZoom(dims.fitScale, "fit");
-    const cacheKey = `${image.id}:${dims.targetWidth}x${dims.targetHeight}`;
+    const crop = getImageCrop(image);
+    const dims = computePreviewDimensions(sourceImage, zoomState.scale, crop);
+    const cacheKey = `${image.id}:${dims.targetWidth}x${dims.targetHeight}:${crop.x},${crop.y},${crop.width},${crop.height}`;
 
     let sourcePixels = sourcePixelsCache.get(cacheKey);
     if (!sourcePixels) {
       previewCanvasEl.width = dims.targetWidth;
       previewCanvasEl.height = dims.targetHeight;
-      previewCtx.drawImage(sourceImage, 0, 0, dims.targetWidth, dims.targetHeight);
+      previewCtx.drawImage(
+        sourceImage,
+        dims.sourceCropX,
+        dims.sourceCropY,
+        dims.sourceCropWidth,
+        dims.sourceCropHeight,
+        0,
+        0,
+        dims.targetWidth,
+        dims.targetHeight
+      );
       sourcePixels = previewCtx.getImageData(0, 0, dims.targetWidth, dims.targetHeight);
       sourcePixelsCache.set(cacheKey, sourcePixels);
     } else {
@@ -303,10 +359,11 @@ async function renderPreview() {
     const processed = processPreviewPixels(sourcePixels.data, sourcePixels.width, sourcePixels.height, image.adjustments);
     previewCtx.putImageData(new ImageData(processed, sourcePixels.width, sourcePixels.height), 0, 0);
 
-    previewCanvasEl.hidden = false;
+    previewStageEl.hidden = false;
     previewEmptyEl.hidden = true;
+    cropOverlayEl.hidden = !interactionState.cropMode;
   } catch {
-    previewCanvasEl.hidden = true;
+    previewStageEl.hidden = true;
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Unable to decode preview image.";
   }
@@ -327,11 +384,16 @@ async function exportSelectedImage() {
   for (const image of selected) {
     if (!image.previewUrl) continue;
     const source = await readImage(image.previewUrl);
+    const crop = getImageCrop(image);
+    const cropX = Math.round(source.naturalWidth * crop.x);
+    const cropY = Math.round(source.naturalHeight * crop.y);
+    const cropWidth = Math.max(1, Math.round(source.naturalWidth * crop.width));
+    const cropHeight = Math.max(1, Math.round(source.naturalHeight * crop.height));
     const canvas = document.createElement("canvas");
-    canvas.width = source.naturalWidth;
-    canvas.height = source.naturalHeight;
+    canvas.width = cropWidth;
+    canvas.height = cropHeight;
     const ctx = canvas.getContext("2d", { willReadFrequently: true });
-    ctx.drawImage(source, 0, 0);
+    ctx.drawImage(source, cropX, cropY, cropWidth, cropHeight, 0, 0, cropWidth, cropHeight);
     const pixels = ctx.getImageData(0, 0, canvas.width, canvas.height);
     const processed = processPreviewPixels(pixels.data, canvas.width, canvas.height, image.adjustments);
     ctx.putImageData(new ImageData(processed, canvas.width, canvas.height), 0, 0);
@@ -384,6 +446,7 @@ function renderBasicControls() {
       const valueInput = document.createElement("input");
       valueInput.type = "number";
       valueInput.className = "control-value-input";
+      valueInput.dataset.controlKey = control.key;
       valueInput.min = String(control.min);
       valueInput.max = String(control.max);
       valueInput.step = String(control.step);
@@ -400,6 +463,14 @@ function renderBasicControls() {
 
       input.addEventListener("input", () => applyControlUpdate(input.value));
       valueInput.addEventListener("change", () => applyControlUpdate(valueInput.value));
+      valueInput.addEventListener("keydown", (event) => {
+        if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
+        event.preventDefault();
+        const direction = event.key === "ArrowUp" ? 1 : -1;
+        let increment = control.key === "exposure" ? 0.05 : 1;
+        if (event.shiftKey) increment = control.key === "exposure" ? 0.5 : 10;
+        applyControlUpdate(Number(valueInput.value) + (direction * increment));
+      });
       input.addEventListener("dblclick", () => applyControlUpdate(DEFAULT_ADJUSTMENTS[control.key]));
 
       sliderAndInput.append(input, valueInput);
@@ -447,6 +518,7 @@ function downloadRecipe() {
       fullPath: image.fullPath,
       adjustments: image.adjustments,
       masks: image.masks,
+      crop: image.crop,
       rating: image.rating,
       colorLabel: image.colorLabel
     }))
@@ -523,6 +595,43 @@ function bindTabs() {
   activateTab("edit");
 }
 
+function isTypingIntoField(target) {
+  if (!target) return false;
+  const tag = target.tagName?.toLowerCase();
+  return tag === "input" || tag === "textarea" || tag === "select" || target.isContentEditable;
+}
+
+function updateCropBoxFromPointer(event) {
+  const rect = previewCanvasEl.getBoundingClientRect();
+  const currentX = Math.max(rect.left, Math.min(rect.right, event.clientX));
+  const currentY = Math.max(rect.top, Math.min(rect.bottom, event.clientY));
+  const left = Math.min(interactionState.cropStartX, currentX) - rect.left;
+  const top = Math.min(interactionState.cropStartY, currentY) - rect.top;
+  const width = Math.abs(currentX - interactionState.cropStartX);
+  const height = Math.abs(currentY - interactionState.cropStartY);
+  cropBoxEl.style.left = `${left}px`;
+  cropBoxEl.style.top = `${top}px`;
+  cropBoxEl.style.width = `${width}px`;
+  cropBoxEl.style.height = `${height}px`;
+}
+
+function commitCropFromBox() {
+  const image = selectedBase();
+  if (!image) return;
+  const canvasRect = previewCanvasEl.getBoundingClientRect();
+  const boxRect = cropBoxEl.getBoundingClientRect();
+  if (boxRect.width < 16 || boxRect.height < 16) return;
+  const x = (boxRect.left - canvasRect.left) / canvasRect.width;
+  const y = (boxRect.top - canvasRect.top) / canvasRect.height;
+  const width = boxRect.width / canvasRect.width;
+  const height = boxRect.height / canvasRect.height;
+  setImageCrop(image, { x, y, width, height });
+  sourcePixelsCache.clear();
+  interactionState.cropMode = false;
+  cropOverlayEl.hidden = true;
+  schedulePreviewRender();
+}
+
 function bindActions() {
   document.querySelector("#copy-all").onclick = () => store.copyAdjustments();
   document.querySelector("#copy-selective").onclick = () => {
@@ -575,10 +684,7 @@ function bindActions() {
 
   document.querySelector("#zoom-in").onclick = () => applyZoom(zoomState.scale * 1.2);
   document.querySelector("#zoom-out").onclick = () => applyZoom(zoomState.scale / 1.2);
-  document.querySelector("#zoom-fit").onclick = () => {
-    zoomState.mode = "fit";
-    schedulePreviewRender();
-  };
+  document.querySelector("#zoom-fit").onclick = () => applyZoom(1);
 
   previewCardEl.addEventListener("wheel", (event) => {
     if (event.deltaY === 0) return;
@@ -587,12 +693,85 @@ function bindActions() {
     applyZoom(zoomState.scale * factor);
   }, { passive: false });
 
+  previewCardEl.addEventListener("mousedown", (event) => {
+    if (interactionState.cropMode) {
+      if (event.button !== 0 || !previewCanvasEl.isConnected) return;
+      interactionState.cropDragging = true;
+      interactionState.cropStartX = event.clientX;
+      interactionState.cropStartY = event.clientY;
+      cropBoxEl.style.left = "0px";
+      cropBoxEl.style.top = "0px";
+      cropBoxEl.style.width = "0px";
+      cropBoxEl.style.height = "0px";
+      updateCropBoxFromPointer(event);
+      return;
+    }
+
+    if (!interactionState.spacePressed || zoomState.scale <= 1 || event.button !== 0) return;
+    interactionState.panning = true;
+    interactionState.panStartX = event.clientX;
+    interactionState.panStartY = event.clientY;
+    interactionState.scrollLeft = previewCardEl.scrollLeft;
+    interactionState.scrollTop = previewCardEl.scrollTop;
+  });
+
+  window.addEventListener("mousemove", (event) => {
+    if (interactionState.cropDragging) {
+      updateCropBoxFromPointer(event);
+      return;
+    }
+    if (!interactionState.panning) return;
+    previewCardEl.scrollLeft = interactionState.scrollLeft - (event.clientX - interactionState.panStartX);
+    previewCardEl.scrollTop = interactionState.scrollTop - (event.clientY - interactionState.panStartY);
+  });
+
+  window.addEventListener("mouseup", () => {
+    if (interactionState.cropDragging) {
+      interactionState.cropDragging = false;
+      commitCropFromBox();
+      return;
+    }
+    interactionState.panning = false;
+  });
+
   window.addEventListener("resize", () => {
     sourcePixelsCache.clear();
     schedulePreviewRender();
   });
 
   document.addEventListener("keydown", (event) => {
+    if (event.code === "Space" && !isTypingIntoField(event.target)) {
+      interactionState.spacePressed = true;
+      previewCardEl.style.cursor = "grab";
+      event.preventDefault();
+    }
+
+    if (event.key.toLowerCase() === "c" && !event.ctrlKey && !isTypingIntoField(event.target)) {
+      interactionState.cropMode = !interactionState.cropMode;
+      cropOverlayEl.hidden = !interactionState.cropMode;
+      event.preventDefault();
+    }
+
+    if (!isTypingIntoField(event.target) && selectedBase()) {
+      if (/^[1-5]$/.test(event.key)) {
+        store.rateSelected(Number(event.key));
+        renderFilmstrip();
+        event.preventDefault();
+      }
+
+      if (COLOR_SHORTCUTS[event.key]) {
+        store.setColorLabel(COLOR_SHORTCUTS[event.key]);
+        renderFilmstrip();
+        event.preventDefault();
+      }
+
+      if (event.key === "Delete" || event.key === "Backspace") {
+        store.markSelectedForDeletion(true);
+        renderFilmstrip();
+        event.preventDefault();
+      }
+    }
+
     if (event.ctrlKey && event.key.toLowerCase() === "c") {
       event.preventDefault();
       if (event.shiftKey) document.querySelector("#copy-selective").click();
@@ -604,6 +783,13 @@ function bindActions() {
       store.pasteAdjustments();
       render();
     }
+  });
+
+  document.addEventListener("keyup", (event) => {
+    if (event.code !== "Space") return;
+    interactionState.spacePressed = false;
+    interactionState.panning = false;
+    previewCardEl.style.cursor = "default";
   });
 }
 

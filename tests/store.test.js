@@ -38,12 +38,15 @@ test("copy selective adjustments and paste only light group", () => {
 test("snapshot round-trip restores image state", () => {
   const store = new RawDeveloperStore([{ id: "1", fileName: "a.CR3" }]);
   store.applyAdjustment("contrast", 55);
+  store.selectedImages[0].crop = { x: 0.1, y: 0.15, width: 0.8, height: 0.75 };
   const [snap] = store.createSnapshot("Strong Contrast");
 
   store.applyAdjustment("contrast", -20);
+  store.selectedImages[0].crop = { x: 0, y: 0, width: 1, height: 1 };
   store.restoreSnapshot("1", snap.id);
 
   assert.equal(store.selectedImages[0].adjustments.contrast, 55);
+  assert.deepEqual(store.selectedImages[0].crop, { x: 0.1, y: 0.15, width: 0.8, height: 0.75 });
 });
 
 test("preset saves selected groups and reapplies", () => {
