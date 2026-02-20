@@ -2,6 +2,18 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { RawDeveloperStore } from "../src/core/store.js";
 
+test("imported files are appended and auto-selected when list was empty", () => {
+  const store = new RawDeveloperStore();
+  const imported = store.importFiles([
+    { fileName: "A7IV_0001.ARW", fullPath: "C:/sony/A7IV_0001.ARW", rawFormat: true },
+    { fileName: "A7IV_0002.ARW", fullPath: "C:/sony/A7IV_0002.ARW", rawFormat: true }
+  ]);
+
+  assert.equal(store.images.length, 2);
+  assert.equal(imported[0].fileName, "A7IV_0001.ARW");
+  assert.equal(store.selectedImages[0].fileName, "A7IV_0001.ARW");
+});
+
 test("copy selective adjustments and paste only light group", () => {
   const store = new RawDeveloperStore([
     { id: "1", fileName: "a.CR3" },

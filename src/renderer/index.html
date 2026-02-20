@@ -15,13 +15,24 @@
         <button id="paste">Paste</button>
         <button id="snapshot">Snapshot</button>
         <button id="preset">Save Preset</button>
+        <button id="export-recipe">Export Recipe</button>
       </div>
     </header>
 
-    <main class="layout">
+    <main class="layout" id="drop-target">
       <aside class="filmstrip" id="filmstrip"></aside>
 
-      <section class="editor">
+      <section class="preview-pane">
+        <div class="preview-card" id="preview-card">
+          <img id="preview-image" alt="Selected preview" hidden />
+          <div class="preview-empty" id="preview-empty">
+            Drag RAW/JPEG files here to begin.
+          </div>
+        </div>
+        <p class="preview-meta" id="preview-meta"></p>
+      </section>
+
+      <aside class="adjustments-sidebar">
         <div class="panel">
           <h2>Basic</h2>
           <div id="basic-controls" class="control-grid"></div>
@@ -65,12 +76,8 @@
           <h2>Snapshots</h2>
           <ul id="snapshot-list"></ul>
         </div>
-      </section>
+      </aside>
     </main>
-
-    <template id="filmstrip-item-template">
-      <button class="filmstrip-item" type="button"></button>
-    </template>
 
     <script type="module" src="./ui.js"></script>
   </body>

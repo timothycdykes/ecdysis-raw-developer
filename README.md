@@ -1,20 +1,24 @@
 # Ecdysis RAW Developer (Windows-focused)
 
-Ecdysis is an open-source RAW photo developer inspired by Adobe Camera Raw. This repository now includes a desktop-oriented Electron scaffold with a filmstrip UI, adjustment engine model, snapshot/preset workflows, rating/culling metadata, and masking primitives.
+Ecdysis is an open-source RAW photo developer inspired by Adobe Camera Raw. This repository includes an Electron desktop scaffold with a filmstrip workflow, adjustment engine model, drag-and-drop import, center preview, and a right-side adjustments panel.
 
 ## Implemented foundation
 
+- **Drag-and-drop ingest** from desktop into the app for common RAW extensions and standard previewable image formats.
+- **Filmstrip-style browser** with multi-select workflow, ratings, color labels, and deletion marking.
+- **Center preview area** that displays the selected image and reflects core adjustment changes in real time (browser-level preview approximation).
+- **Right-side adjustments panel** with basic controls, metadata, masking primitives, and snapshots.
 - **RAW adjustment model** for white balance, exposure, contrast, highlights/shadows, blacks/whites, saturation, vibrance, clarity, texture, dehaze, vignette, tone curves, color mixer, and color grading.
 - **Snapshots** that preserve the full current adjustment state and masks.
 - **Presets with selective options**, allowing users to save and reapply only selected adjustment groups.
-- **Filmstrip-style multi-select workflow** where multiple images can be selected and adjusted together.
 - **Copy/Paste behavior** including:
   - Copy all adjustments (`Ctrl+C`)
   - Copy selective groups (`Ctrl+Shift+C`)
   - Paste to current selection (`Ctrl+V`)
-- **Rating and filtering metadata** (0–5 stars + color labels).
-- **Image culling flag** (mark selected images for deletion; integration to Windows Recycle Bin can be connected in the next backend step).
 - **Mask layer model** supporting linear/radial/brush mask types with local adjustments.
+- **Recipe export** for selected images into a JSON sidecar-like file containing adjustments and metadata.
+
+> Current limitation: browser-native rendering cannot decode most RAW containers directly yet, so unsupported RAW formats show as imported records with edit data tracked, while preview decoding is a future backend milestone.
 
 ## Run locally
 
@@ -32,8 +36,9 @@ npm test
 ## Architecture notes
 
 - `src/core/adjustments.js`: Canonical adjustment schema + copy-group logic.
-- `src/core/store.js`: High-level editor state and operations (snapshots, presets, masks, metadata, culling, copy/paste).
-- `src/renderer/ui.js`: Filmstrip and control panel interactions.
+- `src/core/store.js`: High-level editor state and operations (imports, snapshots, presets, masks, metadata, copy/paste).
+- `src/renderer/ui.js`: Filmstrip, drag-and-drop import, preview, and control panel interactions.
+- `src/renderer/index.html` + `src/renderer/styles.css`: Three-pane editor shell (filmstrip, preview, right adjustments).
 - `src/main.js`: Electron desktop host window.
 
 ## Next milestones to reach full ACR parity
@@ -45,4 +50,3 @@ npm test
 5. **Catalog + sidecar:** robust project database and XMP sidecar compatibility.
 6. **Batch export:** queue for TIFF/JPEG/PNG/DNG and color-managed output.
 7. **Windows-native shell integration:** direct send-to-recycle-bin, Explorer thumbnails, and file watching.
-
