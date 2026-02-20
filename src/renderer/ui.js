@@ -328,6 +328,7 @@ async function renderPreview() {
 
   if (!image) {
     previewStageEl.hidden = true;
+    previewCardEl.classList.remove("is-zoomed");
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Drag RAW/JPEG files here to begin.";
     previewMetaEl.textContent = "";
@@ -338,6 +339,7 @@ async function renderPreview() {
 
   if (!image.previewUrl) {
     previewStageEl.hidden = true;
+    previewCardEl.classList.remove("is-zoomed");
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Preview unavailable for this file.";
     return;
@@ -381,11 +383,15 @@ async function renderPreview() {
     previewStageEl.style.height = `${dims.displayHeight}px`;
     zoomLevelEl.textContent = `${Math.round(dims.displayScale * 100)}%`;
 
+    const isZoomed = dims.displayWidth > previewCardEl.clientWidth || dims.displayHeight > previewCardEl.clientHeight;
+    previewCardEl.classList.toggle("is-zoomed", isZoomed);
+
     previewStageEl.hidden = false;
     previewEmptyEl.hidden = true;
     cropOverlayEl.hidden = !interactionState.cropMode;
   } catch {
     previewStageEl.hidden = true;
+    previewCardEl.classList.remove("is-zoomed");
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Unable to decode preview image.";
   }
@@ -872,6 +878,8 @@ function bindActions() {
 
   previewCardEl.addEventListener("wheel", (event) => {
     if (event.deltaY === 0) return;
+    const isZoomGesture = event.ctrlKey || event.metaKey;
+    if (!isZoomGesture) return;
     event.preventDefault();
     const factor = event.deltaY < 0 ? 1.08 : 0.92;
     applyZoom(zoomState.scale * factor);
@@ -892,11 +900,13 @@ function bindActions() {
     }
 
     if (!interactionState.spacePressed || zoomState.scale <= 1 || event.button !== 0) return;
+    event.preventDefault();
     interactionState.panning = true;
     interactionState.panStartX = event.clientX;
     interactionState.panStartY = event.clientY;
     interactionState.scrollLeft = previewCardEl.scrollLeft;
     interactionState.scrollTop = previewCardEl.scrollTop;
+    previewCardEl.style.cursor = "grabbing";
   });
 
   window.addEventListener("mousemove", (event) => {
@@ -905,6 +915,7 @@ function bindActions() {
       return;
     }
     if (!interactionState.panning) return;
+    event.preventDefault();
     previewCardEl.scrollLeft = interactionState.scrollLeft - (event.clientX - interactionState.panStartX);
     previewCardEl.scrollTop = interactionState.scrollTop - (event.clientY - interactionState.panStartY);
   });
@@ -916,6 +927,7 @@ function bindActions() {
       return;
     }
     interactionState.panning = false;
+    previewCardEl.style.cursor = interactionState.spacePressed ? "grab" : "default";
   });
 
   window.addEventListener("resize", () => {
