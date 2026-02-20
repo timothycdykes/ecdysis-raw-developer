@@ -51,15 +51,43 @@ function hslToRgb(h, s, l) {
   };
 }
 
-function selectMixerChannel(hue) {
-  if (hue < 20 || hue >= 345) return "red";
-  if (hue < 45) return "orange";
-  if (hue < 70) return "yellow";
-  if (hue < 160) return "green";
-  if (hue < 200) return "aqua";
-  if (hue < 255) return "blue";
-  if (hue < 290) return "purple";
-  return "magenta";
+const MIXER_CHANNEL_CENTERS = {
+  red: 0,
+  orange: 32,
+  yellow: 60,
+  green: 120,
+  aqua: 180,
+  blue: 240,
+  purple: 280,
+  magenta: 320
+};
+
+function circularHueDistance(a, b) {
+  const diff = Math.abs(a - b) % 360;
+  return diff > 180 ? 360 - diff : diff;
+}
+
+function getMixerBlend(hue, mixer = {}) {
+  const channels = Object.entries(MIXER_CHANNEL_CENTERS);
+  const sigma = 36;
+  const weighted = channels.map(([name, center]) => {
+    const distance = circularHueDistance(hue, center);
+    const weight = Math.exp(-(distance * distance) / (2 * sigma * sigma));
+    return { weight, channel: mixer[name] };
+  });
+
+  const totalWeight = weighted.reduce((sum, entry) => sum + entry.weight, 0);
+  if (!totalWeight) return { hue: 0, saturation: 0, luminance: 0 };
+
+  const blend = weighted.reduce((acc, entry) => {
+    const ratio = entry.weight / totalWeight;
+    acc.hue += (entry.channel?.hue ?? 0) * ratio;
+    acc.saturation += (entry.channel?.saturation ?? 0) * ratio;
+    acc.luminance += (entry.channel?.luminance ?? 0) * ratio;
+    return acc;
+  }, { hue: 0, saturation: 0, luminance: 0 });
+
+  return blend;
 }
 
 export function processPreviewPixels(data, width, height, adjustments) {
@@ -147,12 +175,15 @@ export function processPreviewPixels(data, width, height, adjustments) {
       }
 
       const hsl = rgbToHsl(r, g, b);
-      const mixerChannel = adjustments.colorMixer?.[selectMixerChannel(hsl.h)];
-      if (mixerChannel) {
-        hsl.h = (hsl.h + mixerChannel.hue * 0.35 + 360) % 360;
-        hsl.s = clampUnit(hsl.s * (1 + mixerChannel.saturation / 100));
-        hsl.l = clampUnit(hsl.l + mixerChannel.luminance / 250);
-      }
+      const mixerBlend = getMixerBlend(hsl.h, adjustments.colorMixer);
+      const hueShift = mixerBlend.hue * 0.5;
+      const saturationShift = mixerBlend.saturation / 100;
+      const luminanceShift = mixerBlend.luminance / 100;
+      const chromaProtection = 0.45 + hsl.s * 0.55;
+
+      hsl.h = (hsl.h + hueShift + 360) % 360;
+      hsl.s = clampUnit(hsl.s * (1 + saturationShift * 0.9));
+      hsl.l = clampUnit(hsl.l + luminanceShift * 0.24 * chromaProtection);
 
       const grade = adjustments.colorGrade;
       if (grade) {
