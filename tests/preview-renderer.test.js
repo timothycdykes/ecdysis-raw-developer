@@ -35,3 +35,28 @@ test("vibrance and saturation alter chroma", () => {
   const vivid = singlePixel([140, 110, 100, 255], { ...DEFAULT_ADJUSTMENTS, vibrance: 80, saturation: 40 });
   assert.ok(vivid[0] - vivid[2] > 40, "expected stronger color separation after vibrance/saturation boost");
 });
+
+test("HSL mixer can shift hue and luminance of channel", () => {
+  const adjusted = structuredClone(DEFAULT_ADJUSTMENTS);
+  adjusted.colorMixer.red.hue = 50;
+  adjusted.colorMixer.red.luminance = 40;
+  const mixed = singlePixel([220, 40, 40, 255], adjusted);
+
+  assert.ok(mixed[1] > mixed[2], "expected red hue shift to move toward yellow/orange");
+  assert.ok(mixed[0] > 220 || mixed[1] > 40, "expected luminance shift to lift output brightness");
+});
+
+test("color grading affects highlights and shadows", () => {
+  const adjusted = structuredClone(DEFAULT_ADJUSTMENTS);
+  adjusted.colorGrade.shadows = { hue: 220, saturation: 80, luminance: -20 };
+  adjusted.colorGrade.highlights = { hue: 40, saturation: 80, luminance: 20 };
+  adjusted.colorGrade.blending = 85;
+
+  const shadow = singlePixel([40, 40, 40, 255], adjusted);
+  const highlight = singlePixel([220, 220, 220, 255], adjusted);
+  const neutralShadow = singlePixel([40, 40, 40, 255], DEFAULT_ADJUSTMENTS);
+  const neutralHighlight = singlePixel([220, 220, 220, 255], DEFAULT_ADJUSTMENTS);
+
+  assert.notDeepEqual(shadow.slice(0, 3), neutralShadow.slice(0, 3), "expected shadow grading to alter neutral shadow response");
+  assert.ok(highlight[0] > neutralHighlight[0], "expected highlight grading with positive luminance to brighten highlights");
+});

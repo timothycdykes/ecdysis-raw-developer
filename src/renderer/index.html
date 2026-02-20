@@ -12,6 +12,15 @@
       <div class="actions">
         <button id="copy-all">Copy (Ctrl+C)</button>
         <button id="copy-selective">Copy Selective (Ctrl+Shift+C)</button>
+        <div class="selective-copy-groups" id="selective-copy-groups">
+          <label><input type="checkbox" value="whiteBalance" checked />WB</label>
+          <label><input type="checkbox" value="light" checked />Light</label>
+          <label><input type="checkbox" value="color" checked />Color</label>
+          <label><input type="checkbox" value="effects" checked />Effects</label>
+          <label><input type="checkbox" value="mixer" checked />Mixer</label>
+          <label><input type="checkbox" value="grade" checked />Grade</label>
+          <label><input type="checkbox" value="curves" />Curve</label>
+        </div>
         <button id="paste">Paste</button>
         <button id="snapshot">Snapshot</button>
         <button id="preset">Save Preset</button>
@@ -63,10 +72,8 @@
 
         <section class="panel acr-panel" data-panel="color" hidden>
           <h2>Color Mixer & Grading</h2>
-          <p class="panel-copy">
-            Color mixer, tone curve, and grading controls are represented in the underlying adjustment model and can be copied via selective copy/paste groups.
-          </p>
-          <p class="panel-copy">Use Copy Selective and include: <code>mixer</code>, <code>curves</code>, <code>grade</code>.</p>
+          <p class="panel-copy">HSL color mixer and 4-way grading are applied live to preview + export.</p>
+          <div id="color-controls" class="control-grid"></div>
         </section>
 
         <section class="panel acr-panel" data-panel="masks" hidden>

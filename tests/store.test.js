@@ -67,3 +67,22 @@ test("preset saves selected groups and reapplies", () => {
   assert.equal(store.selectedImages[0].adjustments.saturation, 30);
   assert.equal(store.selectedImages[0].adjustments.dehaze, 0);
 });
+
+test("copy selective can include color mixer and grading groups", () => {
+  const store = new RawDeveloperStore([
+    { id: "1", fileName: "a.CR3" },
+    { id: "2", fileName: "b.CR3" }
+  ]);
+
+  store.selectImages(["1"]);
+  store.selectedImages[0].adjustments.colorMixer.blue.saturation = 45;
+  store.selectedImages[0].adjustments.colorGrade.global.saturation = 55;
+  store.copyAdjustments({ includeGroups: ["mixer", "grade"] });
+
+  store.selectImages(["2"]);
+  store.pasteAdjustments();
+
+  assert.equal(store.selectedImages[0].adjustments.colorMixer.blue.saturation, 45);
+  assert.equal(store.selectedImages[0].adjustments.colorGrade.global.saturation, 55);
+  assert.equal(store.selectedImages[0].adjustments.exposure, 0);
+});

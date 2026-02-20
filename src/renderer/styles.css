@@ -8,6 +8,9 @@ body {
   background: #1a1b1f;
   color: #ececec;
   overflow: hidden;
+  height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
 
 .topbar {
@@ -43,8 +46,30 @@ input {
 .layout {
   display: grid;
   grid-template-columns: minmax(220px, 18vw) minmax(0, 1fr) minmax(320px, 28vw);
-  height: calc(100vh - 56px);
+  flex: 1;
+  min-height: 0;
   width: 100%;
+}
+
+.selective-copy-groups {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  font-size: 0.76rem;
+}
+
+.selective-copy-groups label {
+  display: inline-flex;
+  gap: 4px;
+  align-items: center;
+  padding: 2px 4px;
+  border-radius: 4px;
+  background: #262b36;
+  border: 1px solid #3f4657;
+}
+
+.selective-copy-groups input {
+  margin: 0;
 }
 
 .filmstrip {
@@ -183,6 +208,7 @@ input {
 
 .preview-stage {
   position: relative;
+  transform-origin: center;
 }
 
 .crop-overlay {
@@ -257,6 +283,18 @@ input {
   color: #bababa;
   font-size: 0.85rem;
   line-height: 1.35;
+}
+
+.color-channel-group {
+  margin-bottom: 8px;
+}
+
+.color-channel-group h4 {
+  margin: 0 0 8px;
+  font-size: 0.8rem;
+  color: #9ba4bc;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .control-grid {

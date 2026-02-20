@@ -56,9 +56,24 @@ const COLOR_SHORTCUTS = {
   "9": "blue",
   "0": "purple"
 };
+const MIXER_CHANNELS = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"];
+const GRADE_RANGES = ["shadows", "midtones", "highlights", "global"];
+const SELECTIVE_GROUP_ALIASES = {
+  wb: "whiteBalance",
+  whitebalance: "whiteBalance",
+  white_balance: "whiteBalance",
+  tone: "light",
+  hsl: "mixer",
+  colormixer: "mixer",
+  grading: "grade",
+  colorgrading: "grade",
+  colourgrading: "grade",
+  tonecurve: "curves"
+};
 
 const filmstripEl = document.querySelector("#filmstrip");
 const basicControlsEl = document.querySelector("#basic-controls");
+const colorControlsEl = document.querySelector("#color-controls");
 const maskListEl = document.querySelector("#mask-list");
 const snapshotListEl = document.querySelector("#snapshot-list");
 const previewCanvasEl = document.querySelector("#preview-canvas");
@@ -170,7 +185,7 @@ function computePreviewDimensions(sourceImage, scale = 1, crop = { x: 0, y: 0, w
   const cropWidth = Math.max(1, Math.round(sourceImage.naturalWidth * crop.width));
   const cropHeight = Math.max(1, Math.round(sourceImage.naturalHeight * crop.height));
   const fitScale = Math.min(cardWidth / cropWidth, cardHeight / cropHeight, 1);
-  const displayScale = fitScale * Math.max(scale, 1);
+  const displayScale = fitScale * scale;
   const qualityScale = Math.max(displayScale, 0.2);
   const targetScale = Math.min(qualityScale * (window.devicePixelRatio || 1), 1);
   const targetWidth = Math.max(64, Math.round(cropWidth * targetScale));
@@ -179,6 +194,9 @@ function computePreviewDimensions(sourceImage, scale = 1, crop = { x: 0, y: 0, w
     targetWidth: Math.min(targetWidth, 2200),
     targetHeight: Math.min(targetHeight, 2200),
     fitScale,
+    displayScale,
+    displayWidth: Math.max(64, Math.round(cropWidth * displayScale)),
+    displayHeight: Math.max(64, Math.round(cropHeight * displayScale)),
     sourceCropX: Math.round(sourceImage.naturalWidth * crop.x),
     sourceCropY: Math.round(sourceImage.naturalHeight * crop.y),
     sourceCropWidth: cropWidth,
@@ -301,7 +319,6 @@ function renderFilmstrip() {
 
 function applyZoom(scale) {
   zoomState.scale = Math.min(6, Math.max(0.1, scale));
-  zoomLevelEl.textContent = `${Math.round(zoomState.scale * 100)}%`;
   schedulePreviewRender();
 }
 
@@ -358,6 +375,11 @@ async function renderPreview() {
 
     const processed = processPreviewPixels(sourcePixels.data, sourcePixels.width, sourcePixels.height, image.adjustments);
     previewCtx.putImageData(new ImageData(processed, sourcePixels.width, sourcePixels.height), 0, 0);
+    previewCanvasEl.style.width = `${dims.displayWidth}px`;
+    previewCanvasEl.style.height = `${dims.displayHeight}px`;
+    previewStageEl.style.width = `${dims.displayWidth}px`;
+    previewStageEl.style.height = `${dims.displayHeight}px`;
+    zoomLevelEl.textContent = `${Math.round(dims.displayScale * 100)}%`;
 
     previewStageEl.hidden = false;
     previewEmptyEl.hidden = true;
@@ -404,6 +426,53 @@ async function exportSelectedImage() {
     a.download = image.fileName.replace(/\.[^/.]+$/, "") + "-edited.jpg";
     a.click();
   }
+}
+
+function createNestedControlRow({ label, value, min, max, step, onUpdate }) {
+  const wrapper = document.createElement("label");
+  wrapper.className = "control-row";
+
+  const heading = document.createElement("div");
+  heading.className = "control-heading";
+  const labelEl = document.createElement("span");
+  labelEl.textContent = label;
+  const valueText = document.createElement("small");
+  valueText.textContent = String(value);
+  heading.append(labelEl, valueText);
+
+  const sliderAndInput = document.createElement("div");
+  sliderAndInput.className = "control-inputs";
+  const input = document.createElement("input");
+  input.type = "range";
+  input.min = String(min);
+  input.max = String(max);
+  input.step = String(step);
+  input.value = String(value);
+
+  const valueInput = document.createElement("input");
+  valueInput.type = "number";
+  valueInput.className = "control-value-input";
+  valueInput.min = String(min);
+  valueInput.max = String(max);
+  valueInput.step = String(step);
+  valueInput.value = String(value);
+
+  const applyValue = (next) => {
+    const rounded = Number(next);
+    if (!Number.isFinite(rounded)) return;
+    const clamped = Math.min(max, Math.max(min, rounded));
+    input.value = String(clamped);
+    valueInput.value = String(clamped);
+    valueText.textContent = String(clamped);
+    onUpdate(clamped);
+  };
+
+  input.addEventListener("input", () => applyValue(input.value));
+  valueInput.addEventListener("change", () => applyValue(valueInput.value));
+
+  sliderAndInput.append(input, valueInput);
+  wrapper.append(heading, sliderAndInput);
+  return wrapper;
 }
 
 function renderBasicControls() {
@@ -480,6 +549,112 @@ function renderBasicControls() {
 
     basicControlsEl.append(section);
   });
+}
+
+function renderColorControls() {
+  const image = selectedBase();
+  colorControlsEl.innerHTML = "";
+  if (!image) return;
+
+  const mixerSection = document.createElement("section");
+  mixerSection.className = "control-section";
+  mixerSection.innerHTML = "<h3>HSL Mixer</h3>";
+
+  MIXER_CHANNELS.forEach((channel) => {
+    const group = document.createElement("div");
+    group.className = "color-channel-group";
+    group.innerHTML = `<h4>${channel}</h4>`;
+
+    ["hue", "saturation", "luminance"].forEach((prop) => {
+      const row = createNestedControlRow({
+        label: prop,
+        value: image.adjustments.colorMixer[channel][prop],
+        min: -100,
+        max: 100,
+        step: 1,
+        onUpdate: (next) => {
+          image.adjustments.colorMixer[channel][prop] = next;
+          schedulePreviewRender();
+        }
+      });
+      group.append(row);
+    });
+
+    mixerSection.append(group);
+  });
+
+  const gradingSection = document.createElement("section");
+  gradingSection.className = "control-section";
+  gradingSection.innerHTML = "<h3>Color Grading</h3>";
+
+  GRADE_RANGES.forEach((rangeName) => {
+    const group = document.createElement("div");
+    group.className = "color-channel-group";
+    group.innerHTML = `<h4>${rangeName}</h4>`;
+
+    const hue = createNestedControlRow({
+      label: "hue",
+      value: image.adjustments.colorGrade[rangeName].hue,
+      min: 0,
+      max: 360,
+      step: 1,
+      onUpdate: (next) => {
+        image.adjustments.colorGrade[rangeName].hue = next;
+        schedulePreviewRender();
+      }
+    });
+    const sat = createNestedControlRow({
+      label: "saturation",
+      value: image.adjustments.colorGrade[rangeName].saturation,
+      min: 0,
+      max: 100,
+      step: 1,
+      onUpdate: (next) => {
+        image.adjustments.colorGrade[rangeName].saturation = next;
+        schedulePreviewRender();
+      }
+    });
+    const lum = createNestedControlRow({
+      label: "luminance",
+      value: image.adjustments.colorGrade[rangeName].luminance,
+      min: -100,
+      max: 100,
+      step: 1,
+      onUpdate: (next) => {
+        image.adjustments.colorGrade[rangeName].luminance = next;
+        schedulePreviewRender();
+      }
+    });
+    group.append(hue, sat, lum);
+    gradingSection.append(group);
+  });
+
+  gradingSection.append(
+    createNestedControlRow({
+      label: "blending",
+      value: image.adjustments.colorGrade.blending,
+      min: 0,
+      max: 100,
+      step: 1,
+      onUpdate: (next) => {
+        image.adjustments.colorGrade.blending = next;
+        schedulePreviewRender();
+      }
+    }),
+    createNestedControlRow({
+      label: "balance",
+      value: image.adjustments.colorGrade.balance,
+      min: -100,
+      max: 100,
+      step: 1,
+      onUpdate: (next) => {
+        image.adjustments.colorGrade.balance = next;
+        schedulePreviewRender();
+      }
+    })
+  );
+
+  colorControlsEl.append(mixerSection, gradingSection);
 }
 
 function renderMasks() {
@@ -632,15 +807,21 @@ function commitCropFromBox() {
   schedulePreviewRender();
 }
 
+function normalizeGroup(group) {
+  const compact = group.trim().toLowerCase().replace(/[^a-z]/g, "");
+  return SELECTIVE_GROUP_ALIASES[compact] ?? group.trim();
+}
+
+function getSelectedCopyGroups() {
+  const checked = Array.from(document.querySelectorAll("#selective-copy-groups input:checked"));
+  const groups = checked.map((el) => normalizeGroup(el.value));
+  return groups.length ? groups : ["light"];
+}
+
 function bindActions() {
   document.querySelector("#copy-all").onclick = () => store.copyAdjustments();
   document.querySelector("#copy-selective").onclick = () => {
-    const includeGroups = prompt(
-      "Enter groups: whiteBalance,light,color,effects,curves,mixer,grade",
-      "whiteBalance,light,color,effects"
-    );
-    if (!includeGroups) return;
-    store.copyAdjustments({ includeGroups: includeGroups.split(",").map((group) => group.trim()) });
+    store.copyAdjustments({ includeGroups: getSelectedCopyGroups() });
   };
   document.querySelector("#paste").onclick = () => {
     store.pasteAdjustments();
@@ -684,7 +865,10 @@ function bindActions() {
 
   document.querySelector("#zoom-in").onclick = () => applyZoom(zoomState.scale * 1.2);
   document.querySelector("#zoom-out").onclick = () => applyZoom(zoomState.scale / 1.2);
-  document.querySelector("#zoom-fit").onclick = () => applyZoom(1);
+  document.querySelector("#zoom-fit").onclick = () => {
+    zoomState.scale = 1;
+    schedulePreviewRender();
+  };
 
   previewCardEl.addEventListener("wheel", (event) => {
     if (event.deltaY === 0) return;
@@ -774,7 +958,7 @@ function bindActions() {
 
     if (event.ctrlKey && event.key.toLowerCase() === "c") {
       event.preventDefault();
-      if (event.shiftKey) document.querySelector("#copy-selective").click();
+      if (event.shiftKey) store.copyAdjustments({ includeGroups: getSelectedCopyGroups() });
       else store.copyAdjustments();
     }
 
@@ -796,6 +980,7 @@ function bindActions() {
 function render() {
   renderFilmstrip();
   renderBasicControls();
+  renderColorControls();
   renderMasks();
   renderSnapshots();
   renderPreview();
