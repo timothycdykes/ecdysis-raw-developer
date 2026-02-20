@@ -41,7 +41,8 @@ const interactionState = {
   cropStartX: 0,
   cropStartY: 0,
   handTool: false,
-  adjustingPreview: false
+  adjustingPreview: false,
+  showOriginalPreview: false
 };
 
 const COLOR_OPTIONS = ["none", "red", "yellow", "green", "blue", "purple"];
@@ -57,8 +58,7 @@ const COLOR_SHORTCUTS = {
   "6": "red",
   "7": "yellow",
   "8": "green",
-  "9": "blue",
-  "0": "purple"
+  "9": "blue"
 };
 const MIXER_CHANNELS = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"];
 const GRADE_RANGES = ["shadows", "midtones", "highlights", "global"];
@@ -108,6 +108,23 @@ const previewCtx = previewCanvasEl.getContext("2d", { willReadFrequently: true }
 
 function selectedBase() {
   return store.selectedImages[0];
+}
+
+function selectedImageIndex() {
+  const base = selectedBase();
+  if (!base) return -1;
+  return store.images.findIndex((img) => img.id === base.id);
+}
+
+function selectImageByOffset(offset) {
+  if (!store.images.length) return;
+  const currentIndex = selectedImageIndex();
+  const safeStart = currentIndex < 0 ? 0 : currentIndex;
+  const nextIndex = Math.max(0, Math.min(store.images.length - 1, safeStart + offset));
+  const nextImage = store.images[nextIndex];
+  if (!nextImage) return;
+  store.selectImages([nextImage.id]);
+  render();
 }
 
 function getImageCrop(image) {
@@ -379,7 +396,8 @@ function updateToolUi() {
 
   if (interactionState.cropMode) previewHelpEl.textContent = "Crop mode: drag on image to set crop. Press C to exit.";
   else if (interactionState.handTool) previewHelpEl.textContent = "Hand tool active: drag to pan. Press H to switch back.";
-  else previewHelpEl.textContent = "Pan: hold Space and drag (or press H for Hand tool).";
+  else if (interactionState.showOriginalPreview) previewHelpEl.textContent = "Original preview shown. Press P or \\ to return to edited preview.";
+  else previewHelpEl.textContent = "Pan: hold Space and drag (or press H for Hand tool). Press P for original preview.";
 }
 
 function clampPreviewScroll() {
@@ -468,13 +486,18 @@ async function renderPreview() {
       previewCanvasEl.height = sourcePixels.height;
     }
 
-    const processed = processPreviewPixels(sourcePixels.data, sourcePixels.width, sourcePixels.height, image.adjustments);
-    previewCtx.putImageData(new ImageData(processed, sourcePixels.width, sourcePixels.height), 0, 0);
+    if (interactionState.showOriginalPreview) {
+      previewCtx.putImageData(sourcePixels, 0, 0);
+    } else {
+      const processed = processPreviewPixels(sourcePixels.data, sourcePixels.width, sourcePixels.height, image.adjustments);
+      previewCtx.putImageData(new ImageData(processed, sourcePixels.width, sourcePixels.height), 0, 0);
+    }
     previewCanvasEl.style.width = `${dims.displayWidth}px`;
     previewCanvasEl.style.height = `${dims.displayHeight}px`;
     previewStageEl.style.width = `${dims.displayWidth}px`;
     previewStageEl.style.height = `${dims.displayHeight}px`;
     zoomLevelEl.textContent = `${Math.round(dims.displayScale * 100)}%`;
+    previewCanvasEl.dataset.previewMode = interactionState.showOriginalPreview ? "original" : "edited";
 
     const isZoomed = dims.displayWidth > previewCardEl.clientWidth || dims.displayHeight > previewCardEl.clientHeight;
     previewCardEl.classList.toggle("is-zoomed", isZoomed);
@@ -1124,6 +1147,8 @@ function bindActions() {
   });
 
   document.addEventListener("keydown", (event) => {
+    const isTyping = isTypingIntoField(event.target);
+
     if (event.code === "Space" && !isTypingIntoField(event.target)) {
       interactionState.spacePressed = true;
       updateToolUi();
@@ -1140,9 +1165,25 @@ function bindActions() {
       event.preventDefault();
     }
 
-    if (!isTypingIntoField(event.target) && selectedBase()) {
+    if (!isTyping && selectedBase()) {
+      if (event.key === "ArrowLeft") {
+        selectImageByOffset(-1);
+        event.preventDefault();
+      }
+
+      if (event.key === "ArrowRight") {
+        selectImageByOffset(1);
+        event.preventDefault();
+      }
+
       if (/^[1-5]$/.test(event.key)) {
         store.rateSelected(Number(event.key));
+        renderFilmstrip();
+        event.preventDefault();
+      }
+
+      if (event.key === "0") {
+        store.rateSelected(0);
         renderFilmstrip();
         event.preventDefault();
       }
@@ -1153,11 +1194,63 @@ function bindActions() {
         event.preventDefault();
       }
 
+      if (event.key.toLowerCase() === "u") {
+        store.selectedImages.forEach((img) => { img.colorLabel = null; });
+        renderFilmstrip();
+        event.preventDefault();
+      }
+
+      if (event.key.toLowerCase() === "x") {
+        store.markSelectedForDeletion(true);
+        renderFilmstrip();
+        event.preventDefault();
+      }
+
+      if (event.key.toLowerCase() === "p" || event.key === "\\") {
+        interactionState.showOriginalPreview = !interactionState.showOriginalPreview;
+        schedulePreviewRender();
+        event.preventDefault();
+      }
+
       if (event.key === "Delete" || event.key === "Backspace") {
         store.markSelectedForDeletion(true);
         renderFilmstrip();
         event.preventDefault();
       }
+    }
+
+    if (!isTyping && !event.ctrlKey && !event.metaKey && event.key.toLowerCase() === "z") {
+      const image = selectedBase();
+      if (!image?.previewUrl) return;
+      readImage(image.previewUrl)
+        .then((sourceImage) => {
+          const crop = getImageCrop(image);
+          const zoomTo100 = getZoomTo100Scale(sourceImage, crop);
+          const targetScale = Math.abs(zoomState.scale - zoomTo100) <= 0.05 ? 1 : zoomTo100;
+          const rect = previewCardEl.getBoundingClientRect();
+          applyZoom(targetScale, { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+        })
+        .catch(() => {});
+      event.preventDefault();
+    }
+
+    if (!isTyping && (event.ctrlKey || event.metaKey) && event.key === "0") {
+      zoomState.pendingPan = { left: 0, top: 0 };
+      zoomState.scale = 1;
+      schedulePreviewRender();
+      event.preventDefault();
+    }
+
+    if (!isTyping && (event.ctrlKey || event.metaKey) && (event.key === "+" || event.key === "=")) {
+      const rect = previewCardEl.getBoundingClientRect();
+      applyZoom(zoomState.scale * 1.2, { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+      event.preventDefault();
+    }
+
+    if (!isTyping && (event.ctrlKey || event.metaKey) && event.key === "-") {
+      const rect = previewCardEl.getBoundingClientRect();
+      applyZoom(zoomState.scale / 1.2, { clientX: rect.left + rect.width / 2, clientY: rect.top + rect.height / 2 });
+      event.preventDefault();
     }
 
     if (event.ctrlKey && event.key.toLowerCase() === "c") {

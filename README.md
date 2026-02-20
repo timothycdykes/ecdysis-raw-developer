@@ -21,6 +21,17 @@ Ecdysis is an open-source RAW photo developer inspired by Adobe Camera Raw. This
 
 > Current limitation: browser-native rendering cannot decode most RAW containers directly yet. RAW files are represented with generated preview cards in filmstrip/main view while full decode remains a backend milestone.
 
+
+## Keyboard workflow parity upgrades
+
+- `P` or `\` toggles edited/original preview (Before/After-style preview check).
+- `Z` toggles between Fit and 100% zoom centered in the preview.
+- `Ctrl/Cmd + 0` resets to Fit; `Ctrl/Cmd + +/-` zooms in/out.
+- `Left/Right Arrow` moves to previous/next image in the filmstrip.
+- `0–5` sets star rating (`0` clears rating).
+- `6–9` sets color labels (red/yellow/green/blue), and `U` clears color label.
+- `X`, `Delete`, or `Backspace` marks selected images for deletion.
+
 ## Run locally
 
 ```bash
