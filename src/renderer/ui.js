@@ -1,6 +1,5 @@
 import { RawDeveloperStore } from "../core/store.js";
-
-const RAW_EXTENSIONS = [".arw", ".cr2", ".cr3", ".dng", ".nef", ".orf", ".raf", ".rw2", ".srw"];
+import { isRawFile, supportsInlinePreview } from "../core/file-formats.js";
 
 const basicControlKeys = [
   "whiteBalanceTemp",
@@ -35,14 +34,41 @@ function selectedBase() {
   return store.selectedImages[0];
 }
 
-function supportsInlinePreview(fileName) {
-  const name = fileName.toLowerCase();
-  return [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"].some((ext) => name.endsWith(ext));
-}
+function createSyntheticRawPreview(fileName) {
+  const extension = fileName.slice(fileName.lastIndexOf(".")).toUpperCase();
+  const canvas = document.createElement("canvas");
+  canvas.width = 640;
+  canvas.height = 400;
+  const context = canvas.getContext("2d");
 
-function isRawFile(fileName) {
-  const name = fileName.toLowerCase();
-  return RAW_EXTENSIONS.some((ext) => name.endsWith(ext));
+  const gradient = context.createLinearGradient(0, 0, canvas.width, canvas.height);
+  gradient.addColorStop(0, "#121720");
+  gradient.addColorStop(1, "#2c3b52");
+  context.fillStyle = gradient;
+  context.fillRect(0, 0, canvas.width, canvas.height);
+
+  context.strokeStyle = "rgba(255, 255, 255, 0.2)";
+  for (let i = 0; i < 8; i += 1) {
+    context.beginPath();
+    context.moveTo(0, (canvas.height / 8) * i);
+    context.lineTo(canvas.width, (canvas.height / 8) * i);
+    context.stroke();
+  }
+
+  context.fillStyle = "rgba(255, 255, 255, 0.88)";
+  context.font = "700 64px Segoe UI";
+  context.fillText("RAW", 42, 120);
+
+  context.font = "600 38px Segoe UI";
+  context.fillStyle = "rgba(110, 168, 255, 0.95)";
+  context.fillText(extension, 42, 180);
+
+  context.font = "500 24px Segoe UI";
+  context.fillStyle = "rgba(220, 230, 245, 0.95)";
+  context.fillText(fileName.slice(0, 40), 42, 228);
+  context.fillText("Embedded browser preview unavailable", 42, 265);
+
+  return canvas.toDataURL("image/png");
 }
 
 function adjustmentToFilter(adjustments) {
@@ -74,7 +100,12 @@ function renderFilmstrip() {
     const btn = document.createElement("button");
     btn.className = `filmstrip-item ${store.selectedIds.includes(image.id) ? "selected" : ""}`;
     btn.type = "button";
-    btn.innerHTML = `<strong>${image.fileName}</strong>
+
+    const thumb = image.previewUrl
+      ? `<img class="filmstrip-thumb" src="${image.previewUrl}" alt="${image.fileName}" />`
+      : `<div class="filmstrip-thumb filmstrip-thumb--placeholder">RAW</div>`;
+
+    btn.innerHTML = `${thumb}<strong>${image.fileName}</strong>
       <small>${image.rating ? "★".repeat(image.rating) : "Unrated"} ${image.colorLabel ? `• ${image.colorLabel}` : ""}</small>
       ${image.markedForDeletion ? "<small>Marked for deletion</small>" : ""}`;
     btn.onclick = (event) => {
@@ -107,7 +138,7 @@ function renderPreview() {
   if (!image.previewUrl) {
     previewImageEl.hidden = true;
     previewEmptyEl.hidden = false;
-    previewEmptyEl.textContent = "RAW imported. Embedded preview decoding for this format is not available in-browser yet, but edits are tracked and can be exported as a recipe.";
+    previewEmptyEl.textContent = "Preview unavailable for this file.";
     return;
   }
 
@@ -230,11 +261,18 @@ function bindDragAndDrop() {
         return;
       }
 
+      const rawFormat = isRawFile(file.name);
+      const previewUrl = supportsInlinePreview(file.name)
+        ? URL.createObjectURL(file)
+        : rawFormat
+          ? createSyntheticRawPreview(file.name)
+          : null;
+
       imported.push({
         fileName: file.name,
         fullPath: file.path,
-        previewUrl: supportsInlinePreview(file.name) ? URL.createObjectURL(file) : null,
-        rawFormat: isRawFile(file.name)
+        previewUrl,
+        rawFormat
       });
     });
 
@@ -242,6 +280,29 @@ function bindDragAndDrop() {
     store.importFiles(imported);
     render();
   });
+}
+
+function bindTabs() {
+  const tabButtons = Array.from(document.querySelectorAll(".acr-tab"));
+  const tabPanels = Array.from(document.querySelectorAll(".acr-panel"));
+
+  function activateTab(tabName) {
+    tabButtons.forEach((button) => {
+      const active = button.dataset.tab === tabName;
+      button.classList.toggle("active", active);
+      button.setAttribute("aria-selected", active ? "true" : "false");
+    });
+
+    tabPanels.forEach((panel) => {
+      panel.hidden = panel.dataset.panel !== tabName;
+    });
+  }
+
+  tabButtons.forEach((button) => {
+    button.addEventListener("click", () => activateTab(button.dataset.tab));
+  });
+
+  activateTab("edit");
 }
 
 function bindActions() {
@@ -321,5 +382,6 @@ function render() {
 }
 
 bindDragAndDrop();
+bindTabs();
 bindActions();
 render();
