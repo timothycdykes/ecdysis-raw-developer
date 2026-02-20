@@ -9,6 +9,7 @@ Ecdysis is an open-source RAW photo developer inspired by Adobe Camera Raw. This
 - **Center preview area** that displays the selected image and reflects core adjustment changes in real time (browser-level preview approximation) with fit/zoom controls and wheel zoom.
 - **Right-side adjustments panel** with an ACR-inspired tabbed layout (Edit, Color, Masking, Snapshots, Metadata).
 - **RAW adjustment model** for white balance, exposure, contrast, highlights/shadows, blacks/whites, saturation, vibrance, clarity, texture, dehaze, vignette, tone curves, color mixer, and color grading.
+- **Profile + treatment controls** with Adobe-inspired profile presets (Color/Landscape/Portrait/Neutral/Vivid/Monochrome), amount slider, and one-click Color/B&W treatment switching.
 - **Snapshots** that preserve the full current adjustment state and masks.
 - **Presets with selective options**, allowing users to save and reapply only selected adjustment groups.
 - **Copy/Paste behavior** including:

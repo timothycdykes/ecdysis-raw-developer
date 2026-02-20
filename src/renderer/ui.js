@@ -61,6 +61,14 @@ const COLOR_SHORTCUTS = {
   "9": "blue"
 };
 const MIXER_CHANNELS = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"];
+const CAMERA_PROFILES = [
+  { value: "adobeColor", label: "Adobe Color" },
+  { value: "adobeLandscape", label: "Adobe Landscape" },
+  { value: "adobePortrait", label: "Adobe Portrait" },
+  { value: "adobeNeutral", label: "Adobe Neutral" },
+  { value: "adobeVivid", label: "Adobe Vivid" },
+  { value: "adobeMonochrome", label: "Adobe Monochrome" }
+];
 const GRADE_RANGES = ["shadows", "midtones", "highlights", "global"];
 const TONE_CURVE_POINTS = [
   { label: "Shadows", index: 1 },
@@ -623,6 +631,67 @@ function renderBasicControls() {
   const image = selectedBase();
   basicControlsEl.innerHTML = "";
   if (!image) return;
+
+  const profileSection = document.createElement("section");
+  profileSection.className = "control-section";
+  profileSection.innerHTML = "<h3>Profile</h3>";
+
+  const profileRow = document.createElement("label");
+  profileRow.className = "control-row";
+  const profileHeading = document.createElement("div");
+  profileHeading.className = "control-heading";
+  profileHeading.innerHTML = "<span>Profile</span><small>Camera</small>";
+  const profileSelect = document.createElement("select");
+  profileSelect.className = "control-select";
+  CAMERA_PROFILES.forEach((profile) => {
+    const option = document.createElement("option");
+    option.value = profile.value;
+    option.textContent = profile.label;
+    profileSelect.append(option);
+  });
+  profileSelect.value = image.adjustments.cameraProfile;
+  profileSelect.addEventListener("change", () => {
+    store.applyAdjustment("cameraProfile", profileSelect.value);
+    schedulePreviewRender();
+  });
+  profileRow.append(profileHeading, profileSelect);
+  profileSection.append(profileRow);
+
+  const profileAmountRow = createNestedControlRow({
+    label: "Amount",
+    value: image.adjustments.profileAmount,
+    min: 0,
+    max: 200,
+    step: 1,
+    defaultValue: DEFAULT_ADJUSTMENTS.profileAmount,
+    onUpdate: (next) => {
+      beginInteractivePreviewUpdate();
+      store.applyAdjustment("profileAmount", next);
+      schedulePreviewRender();
+    }
+  });
+  profileSection.append(profileAmountRow);
+
+  const treatmentRow = document.createElement("div");
+  treatmentRow.className = "treatment-toggle";
+  [
+    { label: "Color", value: "color" },
+    { label: "B&W", value: "blackAndWhite" }
+  ].forEach((mode) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "treatment-button";
+    button.textContent = mode.label;
+    button.classList.toggle("active", image.adjustments.treatment === mode.value);
+    button.onclick = () => {
+      store.applyAdjustment("treatment", mode.value);
+      renderBasicControls();
+      schedulePreviewRender();
+    };
+    treatmentRow.append(button);
+  });
+  profileSection.append(treatmentRow);
+  basicControlsEl.append(profileSection);
 
   const sections = new Map();
   CONTROL_DEFINITIONS.forEach((control) => {
