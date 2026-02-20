@@ -33,12 +33,46 @@
       </section>
 
       <aside class="adjustments-sidebar">
-        <div class="panel">
-          <h2>Basic</h2>
-          <div id="basic-controls" class="control-grid"></div>
+        <div class="acr-tabs" role="tablist" aria-label="Adjustments tabs">
+          <button class="acr-tab active" data-tab="edit" aria-selected="true">Edit</button>
+          <button class="acr-tab" data-tab="color" aria-selected="false">Color</button>
+          <button class="acr-tab" data-tab="masks" aria-selected="false">Masking</button>
+          <button class="acr-tab" data-tab="snapshots" aria-selected="false">Snapshots</button>
+          <button class="acr-tab" data-tab="metadata" aria-selected="false">Metadata</button>
         </div>
 
-        <div class="panel">
+        <section class="panel acr-panel" data-panel="edit">
+          <h2>Basic</h2>
+          <div id="basic-controls" class="control-grid"></div>
+        </section>
+
+        <section class="panel acr-panel" data-panel="color" hidden>
+          <h2>Color Mixer & Grading</h2>
+          <p class="panel-copy">
+            Color mixer, tone curve, and grading controls are represented in the underlying adjustment model and can be copied via selective copy/paste groups.
+          </p>
+          <p class="panel-copy">Use Copy Selective and include: <code>mixer</code>, <code>curves</code>, <code>grade</code>.</p>
+        </section>
+
+        <section class="panel acr-panel" data-panel="masks" hidden>
+          <h2>Masks</h2>
+          <div class="inline-controls">
+            <select id="mask-type">
+              <option value="linear">Linear Gradient</option>
+              <option value="radial">Radial Gradient</option>
+              <option value="brush">Brush</option>
+            </select>
+            <button id="add-mask">Add mask layer</button>
+          </div>
+          <ul id="mask-list"></ul>
+        </section>
+
+        <section class="panel acr-panel" data-panel="snapshots" hidden>
+          <h2>Snapshots</h2>
+          <ul id="snapshot-list"></ul>
+        </section>
+
+        <section class="panel acr-panel" data-panel="metadata" hidden>
           <h2>Metadata</h2>
           <div class="inline-controls">
             <label>Rating
@@ -57,25 +91,7 @@
             <button id="apply-meta">Apply</button>
             <button id="mark-delete">Mark for deletion</button>
           </div>
-        </div>
-
-        <div class="panel">
-          <h2>Masks</h2>
-          <div class="inline-controls">
-            <select id="mask-type">
-              <option value="linear">Linear Gradient</option>
-              <option value="radial">Radial Gradient</option>
-              <option value="brush">Brush</option>
-            </select>
-            <button id="add-mask">Add mask layer</button>
-          </div>
-          <ul id="mask-list"></ul>
-        </div>
-
-        <div class="panel">
-          <h2>Snapshots</h2>
-          <ul id="snapshot-list"></ul>
-        </div>
+        </section>
       </aside>
     </main>
 

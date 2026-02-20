@@ -4,10 +4,10 @@ Ecdysis is an open-source RAW photo developer inspired by Adobe Camera Raw. This
 
 ## Implemented foundation
 
-- **Drag-and-drop ingest** from desktop into the app for common RAW extensions and standard previewable image formats.
-- **Filmstrip-style browser** with multi-select workflow, ratings, color labels, and deletion marking.
+- **Drag-and-drop ingest** from desktop into the app for a broad set of manufacturer RAW extensions (`.cr2`, `.cr3`, `.nef`, `.arw`, `.dng`, `.raf`, `.rw2`, `.orf`, `.pef`, `.iiq`, `.3fr`, and more) plus standard previewable image formats.
+- **Filmstrip-style browser** with visual thumbnails (including RAW placeholder previews), multi-select workflow, ratings, color labels, and deletion marking.
 - **Center preview area** that displays the selected image and reflects core adjustment changes in real time (browser-level preview approximation).
-- **Right-side adjustments panel** with basic controls, metadata, masking primitives, and snapshots.
+- **Right-side adjustments panel** with an ACR-inspired tabbed layout (Edit, Color, Masking, Snapshots, Metadata).
 - **RAW adjustment model** for white balance, exposure, contrast, highlights/shadows, blacks/whites, saturation, vibrance, clarity, texture, dehaze, vignette, tone curves, color mixer, and color grading.
 - **Snapshots** that preserve the full current adjustment state and masks.
 - **Presets with selective options**, allowing users to save and reapply only selected adjustment groups.
@@ -18,7 +18,7 @@ Ecdysis is an open-source RAW photo developer inspired by Adobe Camera Raw. This
 - **Mask layer model** supporting linear/radial/brush mask types with local adjustments.
 - **Recipe export** for selected images into a JSON sidecar-like file containing adjustments and metadata.
 
-> Current limitation: browser-native rendering cannot decode most RAW containers directly yet, so unsupported RAW formats show as imported records with edit data tracked, while preview decoding is a future backend milestone.
+> Current limitation: browser-native rendering cannot decode most RAW containers directly yet. RAW files are represented with generated preview cards in filmstrip/main view while full decode remains a backend milestone.
 
 ## Run locally
 
