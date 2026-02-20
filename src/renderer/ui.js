@@ -1,5 +1,7 @@
 import { RawDeveloperStore } from "../core/store.js";
 
+const RAW_EXTENSIONS = [".arw", ".cr2", ".cr3", ".dng", ".nef", ".orf", ".raf", ".rw2", ".srw"];
+
 const basicControlKeys = [
   "whiteBalanceTemp",
   "whiteBalanceTint",
@@ -17,23 +19,57 @@ const basicControlKeys = [
   "vignette"
 ];
 
-const store = new RawDeveloperStore([
-  { id: "1", fileName: "IMG_1001.CR3", thumbnail: "", fullPath: "C:/photos/IMG_1001.CR3" },
-  { id: "2", fileName: "IMG_1002.CR3", thumbnail: "", fullPath: "C:/photos/IMG_1002.CR3" },
-  { id: "3", fileName: "IMG_1003.NEF", thumbnail: "", fullPath: "C:/photos/IMG_1003.NEF" }
-]);
+const store = new RawDeveloperStore([]);
 
 const filmstripEl = document.querySelector("#filmstrip");
 const basicControlsEl = document.querySelector("#basic-controls");
 const maskListEl = document.querySelector("#mask-list");
 const snapshotListEl = document.querySelector("#snapshot-list");
+const previewImageEl = document.querySelector("#preview-image");
+const previewEmptyEl = document.querySelector("#preview-empty");
+const previewMetaEl = document.querySelector("#preview-meta");
+const dropTargetEl = document.querySelector("#drop-target");
+const previewCardEl = document.querySelector("#preview-card");
 
 function selectedBase() {
   return store.selectedImages[0];
 }
 
+function supportsInlinePreview(fileName) {
+  const name = fileName.toLowerCase();
+  return [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"].some((ext) => name.endsWith(ext));
+}
+
+function isRawFile(fileName) {
+  const name = fileName.toLowerCase();
+  return RAW_EXTENSIONS.some((ext) => name.endsWith(ext));
+}
+
+function adjustmentToFilter(adjustments) {
+  const exposure = adjustments.exposure / 100;
+  const contrast = adjustments.contrast;
+  const saturation = adjustments.saturation + Math.floor(adjustments.vibrance * 0.5);
+  const clarity = adjustments.clarity / 200;
+
+  const brightness = Math.max(0.1, 1 + exposure);
+  const contrastScale = Math.max(0.1, 1 + contrast / 100);
+  const saturationScale = Math.max(0.1, 1 + saturation / 100);
+  const sharpness = Math.max(0, clarity * 0.25);
+
+  return `brightness(${brightness}) contrast(${contrastScale}) saturate(${saturationScale}) drop-shadow(0 0 ${sharpness}px rgba(255,255,255,0.65))`;
+}
+
 function renderFilmstrip() {
   filmstripEl.innerHTML = "";
+
+  if (!store.images.length) {
+    const empty = document.createElement("p");
+    empty.className = "preview-empty";
+    empty.textContent = "No files imported yet.";
+    filmstripEl.append(empty);
+    return;
+  }
+
   store.images.forEach((image) => {
     const btn = document.createElement("button");
     btn.className = `filmstrip-item ${store.selectedIds.includes(image.id) ? "selected" : ""}`;
@@ -56,10 +92,35 @@ function renderFilmstrip() {
   });
 }
 
+function renderPreview() {
+  const image = selectedBase();
+  if (!image) {
+    previewImageEl.hidden = true;
+    previewEmptyEl.hidden = false;
+    previewEmptyEl.textContent = "Drag RAW/JPEG files here to begin.";
+    previewMetaEl.textContent = "";
+    return;
+  }
+
+  previewMetaEl.textContent = `${image.fileName} • ${image.fullPath ?? "dropped file"}`;
+
+  if (!image.previewUrl) {
+    previewImageEl.hidden = true;
+    previewEmptyEl.hidden = false;
+    previewEmptyEl.textContent = "RAW imported. Embedded preview decoding for this format is not available in-browser yet, but edits are tracked and can be exported as a recipe.";
+    return;
+  }
+
+  previewImageEl.src = image.previewUrl;
+  previewImageEl.style.filter = adjustmentToFilter(image.adjustments);
+  previewImageEl.hidden = false;
+  previewEmptyEl.hidden = true;
+}
+
 function renderBasicControls() {
   const image = selectedBase();
-  if (!image) return;
   basicControlsEl.innerHTML = "";
+  if (!image) return;
 
   basicControlKeys.forEach((key) => {
     const wrapper = document.createElement("label");
@@ -79,6 +140,7 @@ function renderBasicControls() {
       store.applyAdjustment(key, Number(input.value));
       valueText.textContent = input.value;
       renderFilmstrip();
+      renderPreview();
     });
 
     wrapper.append(input, valueText);
@@ -116,6 +178,72 @@ function renderSnapshots() {
   });
 }
 
+function downloadRecipe() {
+  const payload = {
+    exportedAt: new Date().toISOString(),
+    images: store.selectedImages.map((image) => ({
+      fileName: image.fileName,
+      fullPath: image.fullPath,
+      adjustments: image.adjustments,
+      masks: image.masks,
+      rating: image.rating,
+      colorLabel: image.colorLabel
+    }))
+  };
+
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = "ecdysis-edit-recipe.json";
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+function bindDragAndDrop() {
+  const preventDefaults = (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+  };
+
+  ["dragenter", "dragover", "dragleave", "drop"].forEach((eventName) => {
+    dropTargetEl.addEventListener(eventName, preventDefaults);
+  });
+
+  ["dragenter", "dragover"].forEach((eventName) => {
+    dropTargetEl.addEventListener(eventName, () => {
+      previewCardEl.classList.add("drag-over");
+    });
+  });
+
+  ["dragleave", "drop"].forEach((eventName) => {
+    dropTargetEl.addEventListener(eventName, () => {
+      previewCardEl.classList.remove("drag-over");
+    });
+  });
+
+  dropTargetEl.addEventListener("drop", (event) => {
+    const imported = [];
+
+    Array.from(event.dataTransfer?.files ?? []).forEach((file) => {
+      if (!supportsInlinePreview(file.name) && !isRawFile(file.name)) {
+        return;
+      }
+
+      imported.push({
+        fileName: file.name,
+        fullPath: file.path,
+        previewUrl: supportsInlinePreview(file.name) ? URL.createObjectURL(file) : null,
+        rawFormat: isRawFile(file.name)
+      });
+    });
+
+    if (!imported.length) return;
+    store.importFiles(imported);
+    render();
+  });
+}
+
 function bindActions() {
   document.querySelector("#copy-all").onclick = () => store.copyAdjustments();
   document.querySelector("#copy-selective").onclick = () => {
@@ -144,6 +272,7 @@ function bindActions() {
       .map((group) => group.trim());
     store.savePreset(name, includeGroups);
   };
+  document.querySelector("#export-recipe").onclick = downloadRecipe;
 
   document.querySelector("#apply-meta").onclick = () => {
     store.rateSelected(Number(document.querySelector("#rating").value));
@@ -188,7 +317,9 @@ function render() {
   renderBasicControls();
   renderMasks();
   renderSnapshots();
+  renderPreview();
 }
 
+bindDragAndDrop();
 bindActions();
 render();

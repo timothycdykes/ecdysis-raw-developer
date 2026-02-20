@@ -2,12 +2,14 @@ import { COPY_GROUPS, DEFAULT_ADJUSTMENTS, deepClone, extractAdjustments, mergeA
 
 export const DEFAULT_COLOR_LABELS = ["red", "yellow", "green", "blue", "purple"];
 
-export function createImageRecord({ id, fileName, thumbnail, fullPath }) {
+export function createImageRecord({ id, fileName, thumbnail, fullPath, previewUrl = null, rawFormat = false }) {
   return {
     id,
     fileName,
     thumbnail,
     fullPath,
+    previewUrl,
+    rawFormat,
     adjustments: deepClone(DEFAULT_ADJUSTMENTS),
     snapshots: [],
     masks: [],
@@ -19,11 +21,32 @@ export function createImageRecord({ id, fileName, thumbnail, fullPath }) {
 
 export class RawDeveloperStore {
   constructor(images = []) {
-    this.images = images.map(createImageRecord);
+    this.nextImageId = images.length;
+    this.images = images.map((image) => this.withId(image));
     this.selectedIds = this.images.length ? [this.images[0].id] : [];
     this.clipboardAdjustments = null;
     this.presets = [];
     this.colorLabels = [...DEFAULT_COLOR_LABELS];
+  }
+
+  withId(image) {
+    if (image.id) {
+      return createImageRecord(image);
+    }
+
+    this.nextImageId += 1;
+    return createImageRecord({ ...image, id: `img-${this.nextImageId}` });
+  }
+
+  importFiles(files = []) {
+    const imported = files.map((file) => this.withId(file));
+    this.images.push(...imported);
+
+    if (!this.selectedIds.length && imported.length) {
+      this.selectedIds = [imported[0].id];
+    }
+
+    return deepClone(imported);
   }
 
   get selectedImages() {
