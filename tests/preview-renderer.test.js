@@ -9,10 +9,17 @@ function singlePixel([r, g, b, a], adjustments) {
 }
 
 test("white balance temperature and tint affect channel balance", () => {
-  const warm = singlePixel([120, 120, 120, 255], { ...DEFAULT_ADJUSTMENTS, whiteBalanceTemp: 100, whiteBalanceTint: 100 });
+  const warm = singlePixel([120, 120, 120, 255], { ...DEFAULT_ADJUSTMENTS, whiteBalanceTemp: 8000, whiteBalanceTint: 100 });
 
   assert.ok(warm[0] > warm[2], "expected red channel to exceed blue when warming");
   assert.ok(warm[1] > 120, "expected tint to increase green channel");
+});
+
+test("exposure now works in EV stops", () => {
+  const base = singlePixel([80, 80, 80, 255], { ...DEFAULT_ADJUSTMENTS, exposure: 0 });
+  const plusOne = singlePixel([80, 80, 80, 255], { ...DEFAULT_ADJUSTMENTS, exposure: 1 });
+
+  assert.ok(plusOne[0] > base[0], "expected +1 EV to brighten the preview");
 });
 
 test("light controls modify tonal response", () => {

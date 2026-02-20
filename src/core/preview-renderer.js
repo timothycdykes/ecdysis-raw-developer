@@ -15,20 +15,21 @@ function rgbToLuma(r, g, b) {
   return (0.2126 * r + 0.7152 * g + 0.0722 * b) / 255;
 }
 
-function applyWhiteBalance(r, g, b, temp, tint) {
-  const tempScale = temp / 100;
+function applyWhiteBalance(r, g, b, tempKelvin, tint) {
+  const neutralKelvin = 5500;
+  const kelvinSpread = 3500;
+  const tempScale = clampUnit((tempKelvin - neutralKelvin) / kelvinSpread / 2 + 0.5) * 2 - 1;
   const tintScale = tint / 100;
 
-  const red = r * (1 + tempScale * 0.18);
-  const blue = b * (1 - tempScale * 0.18);
+  const red = r * (1 + tempScale * 0.22);
+  const blue = b * (1 - tempScale * 0.22);
   const green = g * (1 + tintScale * 0.14);
 
   return [red, green, blue];
 }
 
 function applyGlobalTone(value, exposure, contrast) {
-  const exposureStops = (exposure / 100) * 2;
-  const exposureScale = 2 ** exposureStops;
+  const exposureScale = 2 ** exposure;
   let linear = (value / 255) * exposureScale;
 
   const contrastAmount = contrast / 100;
@@ -98,43 +99,43 @@ function vignetteAmount(x, y, width, height, vignette) {
 export function processPreviewPixels(data, width, height, adjustments) {
   const output = new Uint8ClampedArray(data.length);
 
-  for (let i = 0; i < data.length; i += 4) {
-    const px = (i / 4) % width;
-    const py = Math.floor(i / 4 / width);
+  for (let py = 0; py < height; py += 1) {
+    for (let px = 0; px < width; px += 1) {
+      const i = (py * width + px) * 4;
+      let r = data[i];
+      let g = data[i + 1];
+      let b = data[i + 2];
+      const a = data[i + 3];
 
-    let r = data[i];
-    let g = data[i + 1];
-    let b = data[i + 2];
-    const a = data[i + 3];
+      [r, g, b] = applyWhiteBalance(r, g, b, adjustments.whiteBalanceTemp, adjustments.whiteBalanceTint);
 
-    [r, g, b] = applyWhiteBalance(r, g, b, adjustments.whiteBalanceTemp, adjustments.whiteBalanceTint);
+      r = applyGlobalTone(r, adjustments.exposure, adjustments.contrast);
+      g = applyGlobalTone(g, adjustments.exposure, adjustments.contrast);
+      b = applyGlobalTone(b, adjustments.exposure, adjustments.contrast);
 
-    r = applyGlobalTone(r, adjustments.exposure, adjustments.contrast);
-    g = applyGlobalTone(g, adjustments.exposure, adjustments.contrast);
-    b = applyGlobalTone(b, adjustments.exposure, adjustments.contrast);
+      const luma = rgbToLuma(r, g, b);
+      const lightDelta = applyLightBands(
+        luma,
+        adjustments.highlights,
+        adjustments.shadows,
+        adjustments.whites,
+        adjustments.blacks
+      );
 
-    const luma = rgbToLuma(r, g, b);
-    const lightDelta = applyLightBands(
-      luma,
-      adjustments.highlights,
-      adjustments.shadows,
-      adjustments.whites,
-      adjustments.blacks
-    );
+      r = clamp(r + lightDelta);
+      g = clamp(g + lightDelta);
+      b = clamp(b + lightDelta);
 
-    r = clamp(r + lightDelta);
-    g = clamp(g + lightDelta);
-    b = clamp(b + lightDelta);
+      [r, g, b] = applySaturationAndVibrance(r, g, b, adjustments.saturation, adjustments.vibrance);
+      [r, g, b] = applyPresence(r, g, b, adjustments.clarity, adjustments.texture, adjustments.dehaze);
 
-    [r, g, b] = applySaturationAndVibrance(r, g, b, adjustments.saturation, adjustments.vibrance);
-    [r, g, b] = applyPresence(r, g, b, adjustments.clarity, adjustments.texture, adjustments.dehaze);
+      const vignetteScale = vignetteAmount(px, py, width, height, adjustments.vignette);
 
-    const vignetteScale = vignetteAmount(px, py, width, height, adjustments.vignette);
-
-    output[i] = clamp(r * vignetteScale);
-    output[i + 1] = clamp(g * vignetteScale);
-    output[i + 2] = clamp(b * vignetteScale);
-    output[i + 3] = a;
+      output[i] = clamp(r * vignetteScale);
+      output[i + 1] = clamp(g * vignetteScale);
+      output[i + 2] = clamp(b * vignetteScale);
+      output[i + 3] = a;
+    }
   }
 
   return output;

@@ -1,5 +1,5 @@
 export const DEFAULT_ADJUSTMENTS = Object.freeze({
-  whiteBalanceTemp: 0,
+  whiteBalanceTemp: 5500,
   whiteBalanceTint: 0,
   exposure: 0,
   contrast: 0,
