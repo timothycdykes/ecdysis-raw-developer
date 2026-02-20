@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Ecdysis RAW Developer</title>
+    <link rel="stylesheet" href="./styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <h1>Ecdysis RAW Developer</h1>
+      <div class="actions">
+        <button id="copy-all">Copy (Ctrl+C)</button>
+        <button id="copy-selective">Copy Selective (Ctrl+Shift+C)</button>
+        <button id="paste">Paste</button>
+        <button id="snapshot">Snapshot</button>
+        <button id="preset">Save Preset</button>
+      </div>
+    </header>
+
+    <main class="layout">
+      <aside class="filmstrip" id="filmstrip"></aside>
+
+      <section class="editor">
+        <div class="panel">
+          <h2>Basic</h2>
+          <div id="basic-controls" class="control-grid"></div>
+        </div>
+
+        <div class="panel">
+          <h2>Metadata</h2>
+          <div class="inline-controls">
+            <label>Rating
+              <select id="rating">
+                <option value="0">Unrated</option>
+                <option value="1">1 ★</option>
+                <option value="2">2 ★</option>
+                <option value="3">3 ★</option>
+                <option value="4">4 ★</option>
+                <option value="5">5 ★</option>
+              </select>
+            </label>
+            <label>Color label
+              <input id="color-label" placeholder="red, yellow..." />
+            </label>
+            <button id="apply-meta">Apply</button>
+            <button id="mark-delete">Mark for deletion</button>
+          </div>
+        </div>
+
+        <div class="panel">
+          <h2>Masks</h2>
+          <div class="inline-controls">
+            <select id="mask-type">
+              <option value="linear">Linear Gradient</option>
+              <option value="radial">Radial Gradient</option>
+              <option value="brush">Brush</option>
+            </select>
+            <button id="add-mask">Add mask layer</button>
+          </div>
+          <ul id="mask-list"></ul>
+        </div>
+
+        <div class="panel">
+          <h2>Snapshots</h2>
+          <ul id="snapshot-list"></ul>
+        </div>
+      </section>
+    </main>
+
+    <template id="filmstrip-item-template">
+      <button class="filmstrip-item" type="button"></button>
+    </template>
+
+    <script type="module" src="./ui.js"></script>
+  </body>
+</html>
