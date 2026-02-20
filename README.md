@@ -1,12 +1,12 @@
 # Ecdysis RAW Developer (Windows-focused)
 
-Ecdysis is an open-source RAW photo developer inspired by Adobe Camera Raw. This repository includes an Electron desktop scaffold with a filmstrip workflow, adjustment engine model, drag-and-drop import, center preview, and a right-side adjustments panel.
+Ecdysis is an open-source RAW photo developer inspired by Adobe Camera Raw. This repository includes an Electron desktop scaffold with a filmstrip workflow, adjustment engine model, drag-and-drop import, center preview, zoom controls, export flow, and a right-side adjustments panel.
 
 ## Implemented foundation
 
 - **Drag-and-drop ingest** from desktop into the app for a broad set of manufacturer RAW extensions (`.cr2`, `.cr3`, `.nef`, `.arw`, `.dng`, `.raf`, `.rw2`, `.orf`, `.pef`, `.iiq`, `.3fr`, and more) plus standard previewable image formats.
-- **Filmstrip-style browser** with visual thumbnails (including RAW placeholder previews), multi-select workflow, ratings, color labels, and deletion marking.
-- **Center preview area** that displays the selected image and reflects core adjustment changes in real time (browser-level preview approximation).
+- **Filmstrip-style browser** with visual thumbnails (including RAW placeholder previews), multi-select workflow, inline star ratings, inline color labels, and deletion marking.
+- **Center preview area** that displays the selected image and reflects core adjustment changes in real time (browser-level preview approximation) with fit/zoom controls and wheel zoom.
 - **Right-side adjustments panel** with an ACR-inspired tabbed layout (Edit, Color, Masking, Snapshots, Metadata).
 - **RAW adjustment model** for white balance, exposure, contrast, highlights/shadows, blacks/whites, saturation, vibrance, clarity, texture, dehaze, vignette, tone curves, color mixer, and color grading.
 - **Snapshots** that preserve the full current adjustment state and masks.
@@ -16,6 +16,7 @@ Ecdysis is an open-source RAW photo developer inspired by Adobe Camera Raw. This
   - Copy selective groups (`Ctrl+Shift+C`)
   - Paste to current selection (`Ctrl+V`)
 - **Mask layer model** supporting linear/radial/brush mask types with local adjustments.
+- **Image export** for selected images to rendered JPEG output.
 - **Recipe export** for selected images into a JSON sidecar-like file containing adjustments and metadata.
 
 > Current limitation: browser-native rendering cannot decode most RAW containers directly yet. RAW files are represented with generated preview cards in filmstrip/main view while full decode remains a backend milestone.
