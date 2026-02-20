@@ -27,6 +27,7 @@ const sourcePixelsCache = new Map();
 let previewRenderToken = 0;
 let scheduledPreviewFrame = null;
 const zoomState = { scale: 1, pendingPan: null };
+const colorUiState = { mixerMode: "hue" };
 const interactionState = {
   spacePressed: false,
   panning: false,
@@ -59,6 +60,18 @@ const COLOR_SHORTCUTS = {
 };
 const MIXER_CHANNELS = ["red", "orange", "yellow", "green", "aqua", "blue", "purple", "magenta"];
 const GRADE_RANGES = ["shadows", "midtones", "highlights", "global"];
+const MIXER_PROPS = ["hue", "saturation", "luminance"];
+const MIXER_PROP_LABEL = { hue: "Hue", saturation: "Sat", luminance: "Lum" };
+const CHANNEL_SWATCH = {
+  red: "#f06a6a",
+  orange: "#f2a65a",
+  yellow: "#f3d96b",
+  green: "#67c07f",
+  aqua: "#57c7d6",
+  blue: "#6f9eff",
+  purple: "#b38dff",
+  magenta: "#f08ae0"
+};
 const SELECTIVE_GROUP_ALIASES = {
   wb: "whiteBalance",
   whitebalance: "whiteBalance",
@@ -352,6 +365,13 @@ function updateToolUi() {
   else previewHelpEl.textContent = "Pan: hold Space and drag (or press H for Hand tool).";
 }
 
+function clampPreviewScroll() {
+  const maxLeft = Math.max(0, previewCardEl.scrollWidth - previewCardEl.clientWidth);
+  const maxTop = Math.max(0, previewCardEl.scrollHeight - previewCardEl.clientHeight);
+  previewCardEl.scrollLeft = Math.max(0, Math.min(maxLeft, previewCardEl.scrollLeft));
+  previewCardEl.scrollTop = Math.max(0, Math.min(maxTop, previewCardEl.scrollTop));
+}
+
 function applyZoom(scale, anchor = null) {
   const previousScale = zoomState.scale;
   const nextScale = Math.min(6, Math.max(0.1, scale));
@@ -443,6 +463,8 @@ async function renderPreview() {
       previewCardEl.scrollLeft = Math.max(0, Math.min(maxLeft, zoomState.pendingPan.left));
       previewCardEl.scrollTop = Math.max(0, Math.min(maxTop, zoomState.pendingPan.top));
       zoomState.pendingPan = null;
+    } else {
+      clampPreviewScroll();
     }
 
     previewStageEl.hidden = false;
@@ -625,39 +647,57 @@ function renderColorControls() {
 
   const mixerSection = document.createElement("section");
   mixerSection.className = "control-section";
-  mixerSection.innerHTML = "<h3>HSL Mixer</h3>";
+  mixerSection.innerHTML = "<h3>Color Mixer</h3>";
+
+  const mixerModeTabs = document.createElement("div");
+  mixerModeTabs.className = "mixer-mode-tabs";
+  MIXER_PROPS.forEach((prop) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "mixer-mode-tab";
+    button.textContent = MIXER_PROP_LABEL[prop];
+    button.classList.toggle("active", colorUiState.mixerMode === prop);
+    button.onclick = () => {
+      colorUiState.mixerMode = prop;
+      renderColorControls();
+    };
+    mixerModeTabs.append(button);
+  });
+  mixerSection.append(mixerModeTabs);
 
   MIXER_CHANNELS.forEach((channel) => {
-    const group = document.createElement("div");
-    group.className = "color-channel-group";
-    group.innerHTML = `<h4>${channel}</h4>`;
-
-    ["hue", "saturation", "luminance"].forEach((prop) => {
-      const row = createNestedControlRow({
-        label: prop,
-        value: image.adjustments.colorMixer[channel][prop],
-        min: -100,
-        max: 100,
-        step: 1,
-        onUpdate: (next) => {
-          image.adjustments.colorMixer[channel][prop] = next;
-          schedulePreviewRender();
-        }
-      });
-      group.append(row);
+    const row = createNestedControlRow({
+      label: channel,
+      value: image.adjustments.colorMixer[channel][colorUiState.mixerMode],
+      min: -100,
+      max: 100,
+      step: 1,
+      onUpdate: (next) => {
+        image.adjustments.colorMixer[channel][colorUiState.mixerMode] = next;
+        schedulePreviewRender();
+      }
     });
-
-    mixerSection.append(group);
+    row.classList.add("mixer-channel-row");
+    row.style.setProperty("--channel-accent", CHANNEL_SWATCH[channel]);
+    mixerSection.append(row);
   });
 
   const gradingSection = document.createElement("section");
   gradingSection.className = "control-section";
   gradingSection.innerHTML = "<h3>Color Grading</h3>";
 
+  const gradingGrid = document.createElement("div");
+  gradingGrid.className = "grading-grid";
+
   GRADE_RANGES.forEach((rangeName) => {
     const group = document.createElement("div");
-    group.className = "color-channel-group";
+    group.className = "color-channel-group grade-wheel-group";
     group.innerHTML = `<h4>${rangeName}</h4>`;
+
+    const wheel = document.createElement("div");
+    wheel.className = "grade-wheel";
+    wheel.style.setProperty("--grade-hue", String(image.adjustments.colorGrade[rangeName].hue));
+    group.append(wheel);
 
     const hue = createNestedControlRow({
       label: "hue",
@@ -667,6 +707,7 @@ function renderColorControls() {
       step: 1,
       onUpdate: (next) => {
         image.adjustments.colorGrade[rangeName].hue = next;
+        renderColorControls();
         schedulePreviewRender();
       }
     });
@@ -693,8 +734,10 @@ function renderColorControls() {
       }
     });
     group.append(hue, sat, lum);
-    gradingSection.append(group);
+    gradingGrid.append(group);
   });
+
+  gradingSection.append(gradingGrid);
 
   gradingSection.append(
     createNestedControlRow({
@@ -723,7 +766,6 @@ function renderColorControls() {
 
   colorControlsEl.append(mixerSection, gradingSection);
 }
-
 function renderMasks() {
   const image = selectedBase();
   maskListEl.innerHTML = "";
@@ -1001,6 +1043,7 @@ function bindActions() {
     event.preventDefault();
     previewCardEl.scrollLeft = interactionState.scrollLeft - (event.clientX - interactionState.panStartX);
     previewCardEl.scrollTop = interactionState.scrollTop - (event.clientY - interactionState.panStartY);
+    clampPreviewScroll();
   });
 
   window.addEventListener("mouseup", () => {
