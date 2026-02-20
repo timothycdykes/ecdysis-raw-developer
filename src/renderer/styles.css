@@ -165,6 +165,7 @@ input {
   flex-direction: column;
   gap: 12px;
   min-width: 0;
+  min-height: 0;
 }
 
 .preview-toolbar {
@@ -208,7 +209,7 @@ input {
   border-radius: 8px;
   background: #15161a;
   height: 100%;
-  min-height: 420px;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -402,4 +403,93 @@ input {
 ul {
   margin: 8px 0 0;
   padding-left: 20px;
+}
+
+
+.mixer-mode-tabs {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px;
+  margin-bottom: 10px;
+}
+
+.mixer-mode-tab {
+  border-radius: 999px;
+  font-size: 0.75rem;
+  padding: 5px 8px;
+}
+
+.mixer-mode-tab.active {
+  border-color: #78aefb;
+  background: #243552;
+  box-shadow: 0 0 0 1px #78aefb inset;
+}
+
+.mixer-channel-row .control-heading span {
+  text-transform: capitalize;
+  position: relative;
+  padding-left: 14px;
+}
+
+.mixer-channel-row .control-heading span::before {
+  content: "";
+  width: 8px;
+  height: 8px;
+  border-radius: 999px;
+  background: var(--channel-accent, #8ea5cd);
+  position: absolute;
+  left: 0;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.grading-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.grade-wheel-group {
+  border: 1px solid #3b4355;
+  border-radius: 6px;
+  padding: 8px;
+  background: #1a1f28;
+}
+
+.grade-wheel {
+  width: 56px;
+  height: 56px;
+  border-radius: 999px;
+  margin: 0 auto 8px;
+  background:
+    radial-gradient(circle at center, rgba(20, 24, 30, 0.95) 24%, transparent 25%),
+    conic-gradient(
+      from 0deg,
+      hsl(0 85% 58%),
+      hsl(60 85% 58%),
+      hsl(120 85% 58%),
+      hsl(180 85% 58%),
+      hsl(240 85% 58%),
+      hsl(300 85% 58%),
+      hsl(360 85% 58%)
+    );
+  box-shadow: 0 0 0 1px #4e5569;
+  position: relative;
+}
+
+.grade-wheel::after {
+  content: "";
+  width: 9px;
+  height: 9px;
+  border-radius: 999px;
+  background: #f5f7fb;
+  border: 1px solid #232833;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform:
+    rotate(calc(var(--grade-hue, 0) * 1deg))
+    translateY(-24px)
+    translateX(-50%);
+  transform-origin: center center;
 }
