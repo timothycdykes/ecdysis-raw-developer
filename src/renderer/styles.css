@@ -5,7 +5,7 @@
 
 body {
   margin: 0;
-  background: #1e1e1e;
+  background: #1a1b1f;
   color: #ececec;
 }
 
@@ -14,8 +14,8 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 10px 16px;
-  border-bottom: 1px solid #333;
-  background: #252525;
+  border-bottom: 1px solid #343744;
+  background: #20232c;
 }
 
 .topbar h1 {
@@ -32,26 +32,27 @@ body {
 button,
 select,
 input {
-  background: #2f2f2f;
+  background: #2c303a;
   color: #f3f3f3;
-  border: 1px solid #4a4a4a;
-  border-radius: 4px;
+  border: 1px solid #4a5161;
+  border-radius: 6px;
   padding: 6px 8px;
 }
 
 .layout {
   display: grid;
-  grid-template-columns: 260px 1fr 380px;
+  grid-template-columns: 280px 1fr 400px;
   height: calc(100vh - 56px);
 }
 
 .filmstrip {
-  border-right: 1px solid #333;
+  border-right: 1px solid #343744;
   overflow: auto;
   padding: 10px;
   display: flex;
   flex-direction: column;
   gap: 8px;
+  background: #1b1e26;
 }
 
 .filmstrip-item {
@@ -60,6 +61,7 @@ input {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  background: #252a34;
 }
 
 .filmstrip-thumb {
@@ -95,12 +97,12 @@ input {
 .preview-card {
   border: 1px dashed #4f4f4f;
   border-radius: 8px;
-  background: #181818;
+  background: #15161a;
   height: 100%;
   min-height: 420px;
   display: grid;
   place-items: center;
-  overflow: hidden;
+  overflow: auto;
 }
 
 .preview-card.drag-over {
@@ -108,7 +110,7 @@ input {
   box-shadow: 0 0 0 1px #6ea8ff inset;
 }
 
-#preview-image {
+#preview-canvas {
   max-width: 100%;
   max-height: 100%;
   object-fit: contain;
@@ -128,12 +130,13 @@ input {
 }
 
 .adjustments-sidebar {
-  border-left: 1px solid #333;
+  border-left: 1px solid #343744;
   overflow: auto;
   padding: 12px;
   display: flex;
   flex-direction: column;
   gap: 12px;
+  background: #1b1e26;
 }
 
 .acr-tabs {
@@ -157,10 +160,10 @@ input {
 }
 
 .panel {
-  border: 1px solid #333;
+  border: 1px solid #333a48;
   border-radius: 6px;
   padding: 10px;
-  background: #252525;
+  background: #242935;
 }
 
 .panel h2 {
@@ -175,17 +178,44 @@ input {
 }
 
 .control-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
 
-.control-grid label {
-  display: grid;
-  grid-template-columns: 1fr auto;
-  align-items: center;
-  gap: 8px;
+.control-section {
+  border: 1px solid #3b4050;
+  border-radius: 6px;
+  padding: 10px;
+  background: #1d212b;
+}
+
+.control-section h3 {
+  margin: 0 0 10px;
+  font-size: 0.82rem;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #9ba4bc;
+}
+
+.control-row {
+  display: block;
+  margin-bottom: 10px;
+}
+
+.control-row:last-child {
+  margin-bottom: 0;
+}
+
+.control-heading {
+  display: flex;
+  justify-content: space-between;
   font-size: 0.85rem;
+  margin-bottom: 4px;
+}
+
+.control-row input[type="range"] {
+  width: 100%;
 }
 
 .inline-controls {

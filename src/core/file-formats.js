@@ -1,4 +1,4 @@
-export const INLINE_PREVIEW_EXTENSIONS = [".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".avif"];
+export const INLINE_PREVIEW_EXTENSIONS = [".jpg", ".jpeg", ".jpe", ".jfif", ".png", ".webp", ".gif", ".bmp", ".tif", ".tiff", ".avif", ".heic", ".heif"];
 
 // Covers common RAW families across major camera manufacturers.
 export const RAW_EXTENSIONS = [

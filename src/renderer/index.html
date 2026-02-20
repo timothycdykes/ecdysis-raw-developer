@@ -24,7 +24,7 @@
 
       <section class="preview-pane">
         <div class="preview-card" id="preview-card">
-          <img id="preview-image" alt="Selected preview" hidden />
+          <canvas id="preview-canvas" aria-label="Selected preview" hidden></canvas>
           <div class="preview-empty" id="preview-empty">
             Drag RAW/JPEG files here to begin.
           </div>
@@ -43,6 +43,7 @@
 
         <section class="panel acr-panel" data-panel="edit">
           <h2>Basic</h2>
+          <p class="panel-copy">Double-click any slider to reset it to default.</p>
           <div id="basic-controls" class="control-grid"></div>
         </section>
 
