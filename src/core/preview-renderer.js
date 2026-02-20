@@ -11,6 +11,18 @@ function smoothStep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
+function sampleToneCurve(curve, value) {
+  if (!Array.isArray(curve) || curve.length < 2) return clampUnit(value);
+  const clampedValue = clampUnit(value);
+  const scaled = clampedValue * (curve.length - 1);
+  const index = Math.floor(scaled);
+  const nextIndex = Math.min(curve.length - 1, index + 1);
+  const mix = scaled - index;
+  const left = clampUnit(curve[index]);
+  const right = clampUnit(curve[nextIndex]);
+  return left + (right - left) * mix;
+}
+
 function rgbToHsl(r, g, b, out) {
   const rn = r / 255;
   const gn = g / 255;
@@ -164,6 +176,22 @@ export function processPreviewPixels(data, width, height, adjustments) {
       r = clamp(r + lightDelta);
       g = clamp(g + lightDelta);
       b = clamp(b + lightDelta);
+
+      const toneCurve = adjustments.toneCurve;
+      if (toneCurve) {
+        const rgbCurve = toneCurve.rgb;
+        const redCurve = toneCurve.red;
+        const greenCurve = toneCurve.green;
+        const blueCurve = toneCurve.blue;
+
+        const masterR = sampleToneCurve(rgbCurve, r / 255);
+        const masterG = sampleToneCurve(rgbCurve, g / 255);
+        const masterB = sampleToneCurve(rgbCurve, b / 255);
+
+        r = sampleToneCurve(redCurve, masterR) * 255;
+        g = sampleToneCurve(greenCurve, masterG) * 255;
+        b = sampleToneCurve(blueCurve, masterB) * 255;
+      }
 
       const max = Math.max(r, g, b);
       const min = Math.min(r, g, b);
