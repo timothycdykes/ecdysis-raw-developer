@@ -26,6 +26,7 @@ const sourceImageCache = new Map();
 const sourcePixelsCache = new Map();
 let previewRenderToken = 0;
 let scheduledPreviewFrame = null;
+let interactiveRenderResetTimer = null;
 const zoomState = { scale: 1, pendingPan: null };
 const colorUiState = { mixerMode: "hue" };
 const interactionState = {
@@ -39,7 +40,8 @@ const interactionState = {
   cropDragging: false,
   cropStartX: 0,
   cropStartY: 0,
-  handTool: false
+  handTool: false,
+  adjustingPreview: false
 };
 
 const COLOR_OPTIONS = ["none", "red", "yellow", "green", "blue", "purple"];
@@ -219,6 +221,21 @@ function computePreviewDimensions(sourceImage, scale = 1, crop = { x: 0, y: 0, w
     sourceCropWidth: cropWidth,
     sourceCropHeight: cropHeight
   };
+}
+
+function beginInteractivePreviewUpdate() {
+  interactionState.adjustingPreview = true;
+  if (interactiveRenderResetTimer) clearTimeout(interactiveRenderResetTimer);
+  interactiveRenderResetTimer = setTimeout(() => {
+    interactionState.adjustingPreview = false;
+    schedulePreviewRender();
+  }, 140);
+}
+
+function getZoomTo100Scale(sourceImage, crop) {
+  const dims = computePreviewDimensions(sourceImage, 1, crop);
+  if (!dims.fitScale || !Number.isFinite(dims.fitScale)) return 1;
+  return Math.min(6, Math.max(0.1, 1 / dims.fitScale));
 }
 
 async function isPreviewUrlRenderable(url) {
@@ -421,7 +438,12 @@ async function renderPreview() {
     if (currentToken !== previewRenderToken) return;
 
     const crop = getImageCrop(image);
+    const qualityScale = interactionState.adjustingPreview ? 0.55 : 1;
     const dims = computePreviewDimensions(sourceImage, zoomState.scale, crop);
+    if (qualityScale !== 1) {
+      dims.targetWidth = Math.max(64, Math.round(dims.targetWidth * qualityScale));
+      dims.targetHeight = Math.max(64, Math.round(dims.targetHeight * qualityScale));
+    }
     const cacheKey = `${image.id}:${dims.targetWidth}x${dims.targetHeight}:${crop.x},${crop.y},${crop.width},${crop.height}`;
 
     let sourcePixels = sourcePixelsCache.get(cacheKey);
@@ -517,7 +539,7 @@ async function exportSelectedImage() {
   }
 }
 
-function createNestedControlRow({ label, value, min, max, step, onUpdate }) {
+function createNestedControlRow({ label, value, min, max, step, onUpdate, defaultValue = null }) {
   const wrapper = document.createElement("label");
   wrapper.className = "control-row";
 
@@ -558,6 +580,10 @@ function createNestedControlRow({ label, value, min, max, step, onUpdate }) {
 
   input.addEventListener("input", () => applyValue(input.value));
   valueInput.addEventListener("change", () => applyValue(valueInput.value));
+  if (defaultValue !== null) {
+    input.addEventListener("dblclick", () => applyValue(defaultValue));
+    valueInput.addEventListener("dblclick", () => applyValue(defaultValue));
+  }
 
   sliderAndInput.append(input, valueInput);
   wrapper.append(heading, sliderAndInput);
@@ -619,7 +645,10 @@ function renderBasicControls() {
         schedulePreviewRender();
       };
 
-      input.addEventListener("input", () => applyControlUpdate(input.value));
+      input.addEventListener("input", () => {
+        beginInteractivePreviewUpdate();
+        applyControlUpdate(input.value);
+      });
       valueInput.addEventListener("change", () => applyControlUpdate(valueInput.value));
       valueInput.addEventListener("keydown", (event) => {
         if (event.key !== "ArrowUp" && event.key !== "ArrowDown") return;
@@ -672,7 +701,9 @@ function renderColorControls() {
       min: -100,
       max: 100,
       step: 1,
+      defaultValue: DEFAULT_ADJUSTMENTS.colorMixer[channel][colorUiState.mixerMode],
       onUpdate: (next) => {
+        beginInteractivePreviewUpdate();
         image.adjustments.colorMixer[channel][colorUiState.mixerMode] = next;
         schedulePreviewRender();
       }
@@ -705,7 +736,9 @@ function renderColorControls() {
       min: 0,
       max: 360,
       step: 1,
+      defaultValue: DEFAULT_ADJUSTMENTS.colorGrade[rangeName].hue,
       onUpdate: (next) => {
+        beginInteractivePreviewUpdate();
         image.adjustments.colorGrade[rangeName].hue = next;
         renderColorControls();
         schedulePreviewRender();
@@ -717,7 +750,9 @@ function renderColorControls() {
       min: 0,
       max: 100,
       step: 1,
+      defaultValue: DEFAULT_ADJUSTMENTS.colorGrade[rangeName].saturation,
       onUpdate: (next) => {
+        beginInteractivePreviewUpdate();
         image.adjustments.colorGrade[rangeName].saturation = next;
         schedulePreviewRender();
       }
@@ -728,7 +763,9 @@ function renderColorControls() {
       min: -100,
       max: 100,
       step: 1,
+      defaultValue: DEFAULT_ADJUSTMENTS.colorGrade[rangeName].luminance,
       onUpdate: (next) => {
+        beginInteractivePreviewUpdate();
         image.adjustments.colorGrade[rangeName].luminance = next;
         schedulePreviewRender();
       }
@@ -746,7 +783,9 @@ function renderColorControls() {
       min: 0,
       max: 100,
       step: 1,
+      defaultValue: DEFAULT_ADJUSTMENTS.colorGrade.blending,
       onUpdate: (next) => {
+        beginInteractivePreviewUpdate();
         image.adjustments.colorGrade.blending = next;
         schedulePreviewRender();
       }
@@ -757,7 +796,9 @@ function renderColorControls() {
       min: -100,
       max: 100,
       step: 1,
+      defaultValue: DEFAULT_ADJUSTMENTS.colorGrade.balance,
       onUpdate: (next) => {
+        beginInteractivePreviewUpdate();
         image.adjustments.colorGrade.balance = next;
         schedulePreviewRender();
       }
@@ -989,11 +1030,21 @@ function bindActions() {
   cropToolButtonEl.onclick = () => setCropMode(!interactionState.cropMode);
 
   previewCardEl.addEventListener("wheel", (event) => {
-    if (event.deltaY === 0) return;
-    const isZoomGesture = event.ctrlKey || event.metaKey;
-    if (!isZoomGesture) return;
+    const hasWheelDelta = event.deltaY !== 0 || event.deltaX !== 0;
+    if (!hasWheelDelta) return;
     event.preventDefault();
-    const factor = event.deltaY < 0 ? 1.08 : 0.92;
+    if (event.ctrlKey || event.metaKey) {
+      previewCardEl.scrollTop += event.deltaY;
+      clampPreviewScroll();
+      return;
+    }
+    if (event.shiftKey) {
+      previewCardEl.scrollLeft += event.deltaY + event.deltaX;
+      clampPreviewScroll();
+      return;
+    }
+    const primaryDelta = Math.abs(event.deltaY) > Math.abs(event.deltaX) ? event.deltaY : event.deltaX;
+    const factor = primaryDelta < 0 ? 1.08 : 0.92;
     applyZoom(zoomState.scale * factor, { clientX: event.clientX, clientY: event.clientY });
   }, { passive: false });
 
@@ -1026,9 +1077,14 @@ function bindActions() {
     startPan(event);
   });
 
-  previewCardEl.addEventListener("dblclick", (event) => {
+  previewCardEl.addEventListener("dblclick", async (event) => {
     if (!selectedBase()) return;
-    const targetScale = zoomState.scale <= 1.05 ? 2 : 1;
+    const image = selectedBase();
+    if (!image?.previewUrl) return;
+    const sourceImage = await readImage(image.previewUrl);
+    const crop = getImageCrop(image);
+    const zoomTo100 = getZoomTo100Scale(sourceImage, crop);
+    const targetScale = Math.abs(zoomState.scale - zoomTo100) <= 0.05 ? 1 : zoomTo100;
     applyZoom(targetScale, { clientX: event.clientX, clientY: event.clientY });
   });
 
