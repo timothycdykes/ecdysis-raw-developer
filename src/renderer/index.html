@@ -33,7 +33,12 @@
           </div>
         </div>
         <div class="preview-card" id="preview-card">
-          <canvas id="preview-canvas" aria-label="Selected preview" hidden draggable="false"></canvas>
+          <div id="preview-stage" class="preview-stage" hidden>
+            <canvas id="preview-canvas" aria-label="Selected preview" draggable="false"></canvas>
+            <div id="crop-overlay" class="crop-overlay" hidden>
+              <div id="crop-box" class="crop-box"></div>
+            </div>
+          </div>
           <div class="preview-empty" id="preview-empty">
             Drag RAW/JPEG files here to begin.
           </div>

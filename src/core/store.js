@@ -13,6 +13,7 @@ export function createImageRecord({ id, fileName, thumbnail, fullPath, previewUr
     adjustments: deepClone(DEFAULT_ADJUSTMENTS),
     snapshots: [],
     masks: [],
+    crop: { x: 0, y: 0, width: 1, height: 1 },
     rating: 0,
     colorLabel: null,
     markedForDeletion: false
@@ -77,7 +78,8 @@ export class RawDeveloperStore {
         name,
         createdAt: new Date().toISOString(),
         adjustments: deepClone(image.adjustments),
-        masks: deepClone(image.masks)
+        masks: deepClone(image.masks),
+        crop: deepClone(image.crop)
       };
       image.snapshots.push(snapshot);
       created.push(snapshot);
@@ -94,6 +96,7 @@ export class RawDeveloperStore {
 
     image.adjustments = deepClone(snapshot.adjustments);
     image.masks = deepClone(snapshot.masks);
+    image.crop = deepClone(snapshot.crop ?? { x: 0, y: 0, width: 1, height: 1 });
     return true;
   }
 
