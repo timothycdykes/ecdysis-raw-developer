@@ -11,7 +11,7 @@ function smoothStep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
-function rgbToHsl(r, g, b) {
+function rgbToHsl(r, g, b, out) {
   const rn = r / 255;
   const gn = g / 255;
   const bn = b / 255;
@@ -19,7 +19,12 @@ function rgbToHsl(r, g, b) {
   const min = Math.min(rn, gn, bn);
   const lightness = (max + min) / 2;
   const delta = max - min;
-  if (delta === 0) return { h: 0, s: 0, l: lightness };
+  if (delta === 0) {
+    out[0] = 0;
+    out[1] = 0;
+    out[2] = lightness;
+    return out;
+  }
   const saturation = delta / (1 - Math.abs(2 * lightness - 1));
   let hue = 0;
   if (max === rn) hue = ((gn - bn) / delta) % 6;
@@ -27,10 +32,13 @@ function rgbToHsl(r, g, b) {
   else hue = (rn - gn) / delta + 4;
   hue *= 60;
   if (hue < 0) hue += 360;
-  return { h: hue, s: saturation, l: lightness };
+  out[0] = hue;
+  out[1] = saturation;
+  out[2] = lightness;
+  return out;
 }
 
-function hslToRgb(h, s, l) {
+function hslToRgb(h, s, l, out) {
   const chroma = (1 - Math.abs(2 * l - 1)) * s;
   const hp = h / 60;
   const x = chroma * (1 - Math.abs((hp % 2) - 1));
@@ -44,11 +52,10 @@ function hslToRgb(h, s, l) {
   else if (hp < 5) [r, g, b] = [x, 0, chroma];
   else [r, g, b] = [chroma, 0, x];
   const match = l - chroma / 2;
-  return {
-    r: (r + match) * 255,
-    g: (g + match) * 255,
-    b: (b + match) * 255
-  };
+  out[0] = (r + match) * 255;
+  out[1] = (g + match) * 255;
+  out[2] = (b + match) * 255;
+  return out;
 }
 
 const MIXER_CHANNEL_CENTERS = {
@@ -67,31 +74,47 @@ function circularHueDistance(a, b) {
   return diff > 180 ? 360 - diff : diff;
 }
 
-function getMixerBlend(hue, mixer = {}) {
-  const channels = Object.entries(MIXER_CHANNEL_CENTERS);
-  const sigma = 36;
-  const weighted = channels.map(([name, center]) => {
-    const distance = circularHueDistance(hue, center);
-    const weight = Math.exp(-(distance * distance) / (2 * sigma * sigma));
-    return { weight, channel: mixer[name] };
-  });
+const MIXER_CHANNELS = Object.keys(MIXER_CHANNEL_CENTERS);
+const MIXER_SIGMA_SQUARED = 2 * 36 * 36;
 
-  const totalWeight = weighted.reduce((sum, entry) => sum + entry.weight, 0);
-  if (!totalWeight) return { hue: 0, saturation: 0, luminance: 0 };
+function buildMixerLookupTable(mixer = {}) {
+  const hueLut = new Float32Array(360);
+  const satLut = new Float32Array(360);
+  const lumLut = new Float32Array(360);
 
-  const blend = weighted.reduce((acc, entry) => {
-    const ratio = entry.weight / totalWeight;
-    acc.hue += (entry.channel?.hue ?? 0) * ratio;
-    acc.saturation += (entry.channel?.saturation ?? 0) * ratio;
-    acc.luminance += (entry.channel?.luminance ?? 0) * ratio;
-    return acc;
-  }, { hue: 0, saturation: 0, luminance: 0 });
+  for (let hue = 0; hue < 360; hue += 1) {
+    let totalWeight = 0;
+    let hueSum = 0;
+    let satSum = 0;
+    let lumSum = 0;
 
-  return blend;
+    for (const name of MIXER_CHANNELS) {
+      const center = MIXER_CHANNEL_CENTERS[name];
+      const distance = circularHueDistance(hue, center);
+      const weight = Math.exp(-(distance * distance) / MIXER_SIGMA_SQUARED);
+      const channel = mixer[name];
+      hueSum += weight * (channel?.hue ?? 0);
+      satSum += weight * (channel?.saturation ?? 0);
+      lumSum += weight * (channel?.luminance ?? 0);
+      totalWeight += weight;
+    }
+
+    if (totalWeight > 0) {
+      const inv = 1 / totalWeight;
+      hueLut[hue] = hueSum * inv;
+      satLut[hue] = satSum * inv;
+      lumLut[hue] = lumSum * inv;
+    }
+  }
+
+  return { hueLut, satLut, lumLut };
 }
 
 export function processPreviewPixels(data, width, height, adjustments) {
   const output = new Uint8ClampedArray(data.length);
+  const hsl = [0, 0, 0];
+  const rgb = [0, 0, 0];
+  const mixerLut = buildMixerLookupTable(adjustments.colorMixer);
 
   const exposureScale = 2 ** adjustments.exposure;
   const contrastAmount = adjustments.contrast / 100;
@@ -174,20 +197,20 @@ export function processPreviewPixels(data, width, height, adjustments) {
         vignetteScale = 1 - (vignette / 100) * 0.65 * edge;
       }
 
-      const hsl = rgbToHsl(r, g, b);
-      const mixerBlend = getMixerBlend(hsl.h, adjustments.colorMixer);
-      const hueShift = mixerBlend.hue * 0.5;
-      const saturationShift = mixerBlend.saturation / 100;
-      const luminanceShift = mixerBlend.luminance / 100;
-      const chromaProtection = 0.45 + hsl.s * 0.55;
+      rgbToHsl(r, g, b, hsl);
+      const hueIndex = Math.max(0, Math.min(359, Math.round(hsl[0]) % 360));
+      const hueShift = mixerLut.hueLut[hueIndex] * 0.5;
+      const saturationShift = mixerLut.satLut[hueIndex] / 100;
+      const luminanceShift = mixerLut.lumLut[hueIndex] / 100;
+      const chromaProtection = 0.45 + hsl[1] * 0.55;
 
-      hsl.h = (hsl.h + hueShift + 360) % 360;
-      hsl.s = clampUnit(hsl.s * (1 + saturationShift * 0.9));
-      hsl.l = clampUnit(hsl.l + luminanceShift * 0.24 * chromaProtection);
+      hsl[0] = (hsl[0] + hueShift + 360) % 360;
+      hsl[1] = clampUnit(hsl[1] * (1 + saturationShift * 0.9));
+      hsl[2] = clampUnit(hsl[2] + luminanceShift * 0.24 * chromaProtection);
 
       const grade = adjustments.colorGrade;
       if (grade) {
-        const pixelLightness = hsl.l;
+        const pixelLightness = hsl[2];
         const shadowMask = 1 - smoothStep(0.1, 0.5, pixelLightness);
         const highlightMask = smoothStep(0.5, 0.95, pixelLightness);
         const midMask = Math.max(0, 1 - shadowMask - highlightMask);
@@ -211,15 +234,15 @@ export function processPreviewPixels(data, width, height, adjustments) {
           grade.global.luminance * 0.25;
 
         const gradeAmount = blending * 0.01;
-        hsl.h = (hsl.h * (1 - gradeAmount) + gradedHue * gradeAmount + 360) % 360;
-        hsl.s = clampUnit(hsl.s + (gradedSat / 100) * blending * 0.35);
-        hsl.l = clampUnit(hsl.l + (gradedLum / 100) * blending * 0.25);
+        hsl[0] = (hsl[0] * (1 - gradeAmount) + gradedHue * gradeAmount + 360) % 360;
+        hsl[1] = clampUnit(hsl[1] + (gradedSat / 100) * blending * 0.35);
+        hsl[2] = clampUnit(hsl[2] + (gradedLum / 100) * blending * 0.25);
       }
 
-      const gradedRgb = hslToRgb(hsl.h, hsl.s, hsl.l);
-      r = gradedRgb.r;
-      g = gradedRgb.g;
-      b = gradedRgb.b;
+      hslToRgb(hsl[0], hsl[1], hsl[2], rgb);
+      r = rgb[0];
+      g = rgb[1];
+      b = rgb[2];
 
       output[i] = clamp(r * vignetteScale);
       output[i + 1] = clamp(g * vignetteScale);

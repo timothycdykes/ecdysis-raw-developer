@@ -229,7 +229,7 @@ function beginInteractivePreviewUpdate() {
   interactiveRenderResetTimer = setTimeout(() => {
     interactionState.adjustingPreview = false;
     schedulePreviewRender();
-  }, 140);
+  }, 220);
 }
 
 function getZoomTo100Scale(sourceImage, crop) {
@@ -438,7 +438,7 @@ async function renderPreview() {
     if (currentToken !== previewRenderToken) return;
 
     const crop = getImageCrop(image);
-    const qualityScale = interactionState.adjustingPreview ? 0.55 : 1;
+    const qualityScale = interactionState.adjustingPreview ? 0.4 : 1;
     const dims = computePreviewDimensions(sourceImage, zoomState.scale, crop);
     if (qualityScale !== 1) {
       dims.targetWidth = Math.max(64, Math.round(dims.targetWidth * qualityScale));
