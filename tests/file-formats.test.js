@@ -9,7 +9,7 @@ test("recognizes common manufacturer RAW extensions", () => {
 });
 
 test("accepts standard raster formats for direct inline preview", () => {
-  ["a.jpg", "b.JPEG", "c.png", "d.tiff", "e.avif"].forEach((name) => {
+  ["a.jpg", "b.JPEG", "c.png", "d.tiff", "e.avif", "f.heic", "g.HEIF", "h.jfif"].forEach((name) => {
     assert.equal(supportsInlinePreview(name), true);
   });
 

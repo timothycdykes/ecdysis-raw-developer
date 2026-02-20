@@ -1,35 +1,40 @@
+import { DEFAULT_ADJUSTMENTS } from "../core/adjustments.js";
 import { RawDeveloperStore } from "../core/store.js";
 import { isRawFile, supportsInlinePreview } from "../core/file-formats.js";
 import { extractEmbeddedJpegPreview } from "../core/raw-preview.js";
+import { processPreviewPixels } from "../core/preview-renderer.js";
 
-const basicControlKeys = [
-  "whiteBalanceTemp",
-  "whiteBalanceTint",
-  "exposure",
-  "contrast",
-  "highlights",
-  "shadows",
-  "whites",
-  "blacks",
-  "saturation",
-  "vibrance",
-  "clarity",
-  "texture",
-  "dehaze",
-  "vignette"
+const CONTROL_DEFINITIONS = [
+  { key: "whiteBalanceTemp", label: "Temperature", min: -100, max: 100, step: 1, section: "White Balance" },
+  { key: "whiteBalanceTint", label: "Tint", min: -100, max: 100, step: 1, section: "White Balance" },
+  { key: "exposure", label: "Exposure", min: -100, max: 100, step: 1, section: "Light" },
+  { key: "contrast", label: "Contrast", min: -100, max: 100, step: 1, section: "Light" },
+  { key: "highlights", label: "Highlights", min: -100, max: 100, step: 1, section: "Light" },
+  { key: "shadows", label: "Shadows", min: -100, max: 100, step: 1, section: "Light" },
+  { key: "whites", label: "Whites", min: -100, max: 100, step: 1, section: "Light" },
+  { key: "blacks", label: "Blacks", min: -100, max: 100, step: 1, section: "Light" },
+  { key: "saturation", label: "Saturation", min: -100, max: 100, step: 1, section: "Color" },
+  { key: "vibrance", label: "Vibrance", min: -100, max: 100, step: 1, section: "Color" },
+  { key: "clarity", label: "Clarity", min: -100, max: 100, step: 1, section: "Effects" },
+  { key: "texture", label: "Texture", min: -100, max: 100, step: 1, section: "Effects" },
+  { key: "dehaze", label: "Dehaze", min: -100, max: 100, step: 1, section: "Effects" },
+  { key: "vignette", label: "Vignette", min: -100, max: 100, step: 1, section: "Effects" }
 ];
 
 const store = new RawDeveloperStore([]);
+const sourceImageCache = new Map();
+let previewRenderToken = 0;
 
 const filmstripEl = document.querySelector("#filmstrip");
 const basicControlsEl = document.querySelector("#basic-controls");
 const maskListEl = document.querySelector("#mask-list");
 const snapshotListEl = document.querySelector("#snapshot-list");
-const previewImageEl = document.querySelector("#preview-image");
+const previewCanvasEl = document.querySelector("#preview-canvas");
 const previewEmptyEl = document.querySelector("#preview-empty");
 const previewMetaEl = document.querySelector("#preview-meta");
 const dropTargetEl = document.querySelector("#drop-target");
 const previewCardEl = document.querySelector("#preview-card");
+const previewCtx = previewCanvasEl.getContext("2d", { willReadFrequently: true });
 
 function selectedBase() {
   return store.selectedImages[0];
@@ -72,18 +77,20 @@ function createSyntheticRawPreview(fileName) {
   return canvas.toDataURL("image/png");
 }
 
-function adjustmentToFilter(adjustments) {
-  const exposure = adjustments.exposure / 100;
-  const contrast = adjustments.contrast;
-  const saturation = adjustments.saturation + Math.floor(adjustments.vibrance * 0.5);
-  const clarity = adjustments.clarity / 200;
+function readImage(url) {
+  if (sourceImageCache.has(url)) {
+    return sourceImageCache.get(url);
+  }
 
-  const brightness = Math.max(0.1, 1 + exposure);
-  const contrastScale = Math.max(0.1, 1 + contrast / 100);
-  const saturationScale = Math.max(0.1, 1 + saturation / 100);
-  const sharpness = Math.max(0, clarity * 0.25);
+  const promise = new Promise((resolve, reject) => {
+    const image = new Image();
+    image.onload = () => resolve(image);
+    image.onerror = reject;
+    image.src = url;
+  });
 
-  return `brightness(${brightness}) contrast(${contrastScale}) saturate(${saturationScale}) drop-shadow(0 0 ${sharpness}px rgba(255,255,255,0.65))`;
+  sourceImageCache.set(url, promise);
+  return promise;
 }
 
 function renderFilmstrip() {
@@ -124,10 +131,12 @@ function renderFilmstrip() {
   });
 }
 
-function renderPreview() {
+async function renderPreview() {
+  const currentToken = ++previewRenderToken;
   const image = selectedBase();
+
   if (!image) {
-    previewImageEl.hidden = true;
+    previewCanvasEl.hidden = true;
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Drag RAW/JPEG files here to begin.";
     previewMetaEl.textContent = "";
@@ -137,16 +146,34 @@ function renderPreview() {
   previewMetaEl.textContent = `${image.fileName} • ${image.fullPath ?? "dropped file"}`;
 
   if (!image.previewUrl) {
-    previewImageEl.hidden = true;
+    previewCanvasEl.hidden = true;
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Preview unavailable for this file.";
     return;
   }
 
-  previewImageEl.src = image.previewUrl;
-  previewImageEl.style.filter = adjustmentToFilter(image.adjustments);
-  previewImageEl.hidden = false;
-  previewEmptyEl.hidden = true;
+  try {
+    const sourceImage = await readImage(image.previewUrl);
+    if (currentToken !== previewRenderToken) {
+      return;
+    }
+
+    previewCanvasEl.width = sourceImage.naturalWidth;
+    previewCanvasEl.height = sourceImage.naturalHeight;
+    previewCtx.drawImage(sourceImage, 0, 0);
+
+    const pixels = previewCtx.getImageData(0, 0, previewCanvasEl.width, previewCanvasEl.height);
+    const processed = processPreviewPixels(pixels.data, previewCanvasEl.width, previewCanvasEl.height, image.adjustments);
+    const nextImage = new ImageData(processed, previewCanvasEl.width, previewCanvasEl.height);
+    previewCtx.putImageData(nextImage, 0, 0);
+
+    previewCanvasEl.hidden = false;
+    previewEmptyEl.hidden = true;
+  } catch {
+    previewCanvasEl.hidden = true;
+    previewEmptyEl.hidden = false;
+    previewEmptyEl.textContent = "Unable to decode preview image.";
+  }
 }
 
 function renderBasicControls() {
@@ -154,29 +181,62 @@ function renderBasicControls() {
   basicControlsEl.innerHTML = "";
   if (!image) return;
 
-  basicControlKeys.forEach((key) => {
-    const wrapper = document.createElement("label");
-    wrapper.textContent = key;
+  const sections = new Map();
+  CONTROL_DEFINITIONS.forEach((control) => {
+    if (!sections.has(control.section)) {
+      sections.set(control.section, []);
+    }
+    sections.get(control.section).push(control);
+  });
 
-    const input = document.createElement("input");
-    input.type = "range";
-    input.min = "-100";
-    input.max = "100";
-    input.step = "1";
-    input.value = String(image.adjustments[key]);
+  sections.forEach((controls, sectionName) => {
+    const section = document.createElement("section");
+    section.className = "control-section";
+    section.innerHTML = `<h3>${sectionName}</h3>`;
 
-    const valueText = document.createElement("small");
-    valueText.textContent = String(image.adjustments[key]);
+    controls.forEach((control) => {
+      const wrapper = document.createElement("label");
+      wrapper.className = "control-row";
 
-    input.addEventListener("input", () => {
-      store.applyAdjustment(key, Number(input.value));
-      valueText.textContent = input.value;
-      renderFilmstrip();
-      renderPreview();
+      const heading = document.createElement("div");
+      heading.className = "control-heading";
+
+      const label = document.createElement("span");
+      label.textContent = control.label;
+
+      const valueText = document.createElement("small");
+      valueText.textContent = String(image.adjustments[control.key]);
+
+      heading.append(label, valueText);
+
+      const input = document.createElement("input");
+      input.type = "range";
+      input.min = String(control.min);
+      input.max = String(control.max);
+      input.step = String(control.step);
+      input.value = String(image.adjustments[control.key]);
+
+      input.addEventListener("input", () => {
+        store.applyAdjustment(control.key, Number(input.value));
+        valueText.textContent = input.value;
+        renderFilmstrip();
+        renderPreview();
+      });
+
+      input.addEventListener("dblclick", () => {
+        const resetValue = DEFAULT_ADJUSTMENTS[control.key];
+        input.value = String(resetValue);
+        store.applyAdjustment(control.key, resetValue);
+        valueText.textContent = String(resetValue);
+        renderFilmstrip();
+        renderPreview();
+      });
+
+      wrapper.append(heading, input);
+      section.append(wrapper);
     });
 
-    wrapper.append(input, valueText);
-    basicControlsEl.append(wrapper);
+    basicControlsEl.append(section);
   });
 }
 
@@ -256,7 +316,6 @@ function bindDragAndDrop() {
 
   dropTargetEl.addEventListener("drop", async (event) => {
     const imported = [];
-
     const droppedFiles = Array.from(event.dataTransfer?.files ?? []);
 
     for (const file of droppedFiles) {
@@ -272,7 +331,7 @@ function bindDragAndDrop() {
       } else if (rawFormat) {
         try {
           const fileBytes = new Uint8Array(await file.arrayBuffer());
-          const embeddedPreview = extractEmbeddedJpegPreview(fileBytes);
+          const embeddedPreview = extractEmbeddedJpegPreview(fileBytes, { minBytes: 4_096 });
           if (embeddedPreview) {
             previewUrl = URL.createObjectURL(new Blob([embeddedPreview], { type: "image/jpeg" }));
           }

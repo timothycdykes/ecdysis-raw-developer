@@ -3,7 +3,7 @@ const JPEG_SOI_SECOND = 0xd8;
 const JPEG_EOI_FIRST = 0xff;
 const JPEG_EOI_SECOND = 0xd9;
 
-export function findEmbeddedJpegRange(buffer, { minBytes = 16_384 } = {}) {
+export function findEmbeddedJpegRange(buffer, { minBytes = 4_096 } = {}) {
   const bytes = buffer instanceof Uint8Array ? buffer : new Uint8Array(buffer);
   let bestRange = null;
 
