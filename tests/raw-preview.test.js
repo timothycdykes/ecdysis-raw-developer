@@ -1,7 +1,11 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { extractEmbeddedJpegPreview, findEmbeddedJpegRange } from "../src/core/raw-preview.js";
+import {
+  extractEmbeddedJpegPreview,
+  extractEmbeddedJpegPreviews,
+  findEmbeddedJpegRange
+} from "../src/core/raw-preview.js";
 
 function makeJpeg(size) {
   const bytes = new Uint8Array(size);
@@ -28,6 +32,21 @@ test("findEmbeddedJpegRange returns the largest embedded jpeg", () => {
   assert.equal(range.start, 7000);
   assert.equal(range.end, 7000 + 22000);
   assert.equal(range.size, 22000);
+});
+
+test("extractEmbeddedJpegPreviews returns previews ordered by size", () => {
+  const small = makeJpeg(5000);
+  const large = makeJpeg(22000);
+  const bytes = new Uint8Array(30000);
+
+  bytes.set(small, 500);
+  bytes.set(large, 7000);
+
+  const previews = extractEmbeddedJpegPreviews(bytes, { minBytes: 4096 });
+
+  assert.equal(previews.length, 2);
+  assert.equal(previews[0].length, 22000);
+  assert.equal(previews[1].length, 5000);
 });
 
 test("extractEmbeddedJpegPreview returns null when no embedded jpeg is available", () => {

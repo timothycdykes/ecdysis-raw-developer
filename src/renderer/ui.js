@@ -1,13 +1,13 @@
 import { DEFAULT_ADJUSTMENTS } from "../core/adjustments.js";
 import { RawDeveloperStore } from "../core/store.js";
 import { isRawFile, supportsInlinePreview } from "../core/file-formats.js";
-import { extractEmbeddedJpegPreview } from "../core/raw-preview.js";
+import { extractEmbeddedJpegPreviews } from "../core/raw-preview.js";
 import { processPreviewPixels } from "../core/preview-renderer.js";
 
 const CONTROL_DEFINITIONS = [
-  { key: "whiteBalanceTemp", label: "Temperature", min: -100, max: 100, step: 1, section: "White Balance" },
+  { key: "whiteBalanceTemp", label: "Temperature", min: 2000, max: 50000, step: 100, section: "White Balance", unit: "K" },
   { key: "whiteBalanceTint", label: "Tint", min: -100, max: 100, step: 1, section: "White Balance" },
-  { key: "exposure", label: "Exposure", min: -100, max: 100, step: 1, section: "Light" },
+  { key: "exposure", label: "Exposure", min: -5, max: 5, step: 0.1, section: "Light", unit: "EV" },
   { key: "contrast", label: "Contrast", min: -100, max: 100, step: 1, section: "Light" },
   { key: "highlights", label: "Highlights", min: -100, max: 100, step: 1, section: "Light" },
   { key: "shadows", label: "Shadows", min: -100, max: 100, step: 1, section: "Light" },
@@ -23,7 +23,9 @@ const CONTROL_DEFINITIONS = [
 
 const store = new RawDeveloperStore([]);
 const sourceImageCache = new Map();
+const sourcePixelsCache = new Map();
 let previewRenderToken = 0;
+let scheduledPreviewFrame = null;
 
 const filmstripEl = document.querySelector("#filmstrip");
 const basicControlsEl = document.querySelector("#basic-controls");
@@ -93,6 +95,63 @@ function readImage(url) {
   return promise;
 }
 
+function formatControlValue(control, value) {
+  if (control.key === "whiteBalanceTemp") {
+    return `${Math.round(value)} K`;
+  }
+
+  if (control.key === "exposure") {
+    return `${Number(value).toFixed(1)} EV`;
+  }
+
+  return String(value);
+}
+
+function clampControlValue(control, value) {
+  const min = Number(control.min);
+  const max = Number(control.max);
+  const step = Number(control.step);
+
+  let nextValue = Number(value);
+  if (!Number.isFinite(nextValue)) {
+    nextValue = Number(DEFAULT_ADJUSTMENTS[control.key]);
+  }
+
+  nextValue = Math.min(max, Math.max(min, nextValue));
+  const stepped = Math.round(nextValue / step) * step;
+  return Number(stepped.toFixed(step < 1 ? 1 : 0));
+}
+
+async function isPreviewUrlRenderable(url) {
+  try {
+    await readImage(url);
+    return true;
+  } catch {
+    sourceImageCache.delete(url);
+    return false;
+  }
+}
+
+async function getRawPreviewUrlFromFile(file) {
+  try {
+    const fileBytes = new Uint8Array(await file.arrayBuffer());
+    const candidates = extractEmbeddedJpegPreviews(fileBytes, { minBytes: 2_048 });
+
+    for (const candidate of candidates) {
+      const candidateUrl = URL.createObjectURL(new Blob([candidate], { type: "image/jpeg" }));
+      const renderable = await isPreviewUrlRenderable(candidateUrl);
+      if (renderable) {
+        return candidateUrl;
+      }
+      URL.revokeObjectURL(candidateUrl);
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
+}
+
 function renderFilmstrip() {
   filmstripEl.innerHTML = "";
 
@@ -158,12 +217,19 @@ async function renderPreview() {
       return;
     }
 
-    previewCanvasEl.width = sourceImage.naturalWidth;
-    previewCanvasEl.height = sourceImage.naturalHeight;
-    previewCtx.drawImage(sourceImage, 0, 0);
+    let sourcePixels = sourcePixelsCache.get(image.id);
+    if (!sourcePixels) {
+      previewCanvasEl.width = sourceImage.naturalWidth;
+      previewCanvasEl.height = sourceImage.naturalHeight;
+      previewCtx.drawImage(sourceImage, 0, 0);
+      sourcePixels = previewCtx.getImageData(0, 0, previewCanvasEl.width, previewCanvasEl.height);
+      sourcePixelsCache.set(image.id, sourcePixels);
+    } else {
+      previewCanvasEl.width = sourcePixels.width;
+      previewCanvasEl.height = sourcePixels.height;
+    }
 
-    const pixels = previewCtx.getImageData(0, 0, previewCanvasEl.width, previewCanvasEl.height);
-    const processed = processPreviewPixels(pixels.data, previewCanvasEl.width, previewCanvasEl.height, image.adjustments);
+    const processed = processPreviewPixels(sourcePixels.data, previewCanvasEl.width, previewCanvasEl.height, image.adjustments);
     const nextImage = new ImageData(processed, previewCanvasEl.width, previewCanvasEl.height);
     previewCtx.putImageData(nextImage, 0, 0);
 
@@ -174,6 +240,17 @@ async function renderPreview() {
     previewEmptyEl.hidden = false;
     previewEmptyEl.textContent = "Unable to decode preview image.";
   }
+}
+
+function schedulePreviewRender() {
+  if (scheduledPreviewFrame) {
+    cancelAnimationFrame(scheduledPreviewFrame);
+  }
+
+  scheduledPreviewFrame = requestAnimationFrame(() => {
+    scheduledPreviewFrame = null;
+    renderPreview();
+  });
 }
 
 function renderBasicControls() {
@@ -205,9 +282,12 @@ function renderBasicControls() {
       label.textContent = control.label;
 
       const valueText = document.createElement("small");
-      valueText.textContent = String(image.adjustments[control.key]);
+      valueText.textContent = formatControlValue(control, image.adjustments[control.key]);
 
       heading.append(label, valueText);
+
+      const sliderAndInput = document.createElement("div");
+      sliderAndInput.className = "control-inputs";
 
       const input = document.createElement("input");
       input.type = "range";
@@ -216,23 +296,37 @@ function renderBasicControls() {
       input.step = String(control.step);
       input.value = String(image.adjustments[control.key]);
 
+      const valueInput = document.createElement("input");
+      valueInput.type = "number";
+      valueInput.className = "control-value-input";
+      valueInput.min = String(control.min);
+      valueInput.max = String(control.max);
+      valueInput.step = String(control.step);
+      valueInput.value = String(image.adjustments[control.key]);
+
+      const applyControlUpdate = (value) => {
+        const nextValue = clampControlValue(control, value);
+        store.applyAdjustment(control.key, nextValue);
+        input.value = String(nextValue);
+        valueInput.value = String(nextValue);
+        valueText.textContent = formatControlValue(control, nextValue);
+        schedulePreviewRender();
+      };
+
       input.addEventListener("input", () => {
-        store.applyAdjustment(control.key, Number(input.value));
-        valueText.textContent = input.value;
-        renderFilmstrip();
-        renderPreview();
+        applyControlUpdate(input.value);
+      });
+
+      valueInput.addEventListener("change", () => {
+        applyControlUpdate(valueInput.value);
       });
 
       input.addEventListener("dblclick", () => {
-        const resetValue = DEFAULT_ADJUSTMENTS[control.key];
-        input.value = String(resetValue);
-        store.applyAdjustment(control.key, resetValue);
-        valueText.textContent = String(resetValue);
-        renderFilmstrip();
-        renderPreview();
+        applyControlUpdate(DEFAULT_ADJUSTMENTS[control.key]);
       });
 
-      wrapper.append(heading, input);
+      sliderAndInput.append(input, valueInput);
+      wrapper.append(heading, sliderAndInput);
       section.append(wrapper);
     });
 
@@ -329,16 +423,7 @@ function bindDragAndDrop() {
       if (supportsInlinePreview(file.name)) {
         previewUrl = URL.createObjectURL(file);
       } else if (rawFormat) {
-        try {
-          const fileBytes = new Uint8Array(await file.arrayBuffer());
-          const embeddedPreview = extractEmbeddedJpegPreview(fileBytes, { minBytes: 4_096 });
-          if (embeddedPreview) {
-            previewUrl = URL.createObjectURL(new Blob([embeddedPreview], { type: "image/jpeg" }));
-          }
-        } catch {
-          previewUrl = null;
-        }
-
+        previewUrl = await getRawPreviewUrlFromFile(file);
         if (!previewUrl) {
           previewUrl = createSyntheticRawPreview(file.name);
         }
@@ -354,6 +439,7 @@ function bindDragAndDrop() {
 
     if (!imported.length) return;
     store.importFiles(imported);
+    sourcePixelsCache.clear();
     render();
   });
 }

@@ -218,6 +218,18 @@ input {
   width: 100%;
 }
 
+
+.control-inputs {
+  display: grid;
+  grid-template-columns: 1fr 96px;
+  gap: 8px;
+  align-items: center;
+}
+
+.control-value-input {
+  width: 100%;
+}
+
 .inline-controls {
   display: flex;
   flex-wrap: wrap;
